@@ -1,8 +1,15 @@
+# Django & Python
 *.pyc
 __pycache__/
-*.sqlite3
 *.log
-.env
-/staticfiles/
-media/
 db.sqlite3
+.env
+.venv/
+
+# Training & video data
+Dataset/
+SitupDataset/
+Correct sequence/
+uploaded_videos/
+models/
+training.log
