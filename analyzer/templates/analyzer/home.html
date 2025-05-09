@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Exercise Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        .exercise-options {
+            margin-top: 20px;
+        }
+        .exercise-section {
+            display: none;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+    </style>
+    <script>
+        function showSection(sectionId) {
+            var sections = document.getElementsByClassName('exercise-section');
+            for (var i = 0; i < sections.length; i++) {
+                sections[i].style.display = 'none';
+            }
+            document.getElementById(sectionId).style.display = 'block';
+        }
+    </script>
+</head>
+<body>
+
+    <h1>Exercise Analyzer</h1>
+
+    <div class="exercise-options">
+        <button onclick="showSection('situp')">Sit-up</button>
+        <button onclick="showSection('pushup')">Push-up</button>
+        <button onclick="showSection('plank')">Plank</button>
+    </div>
+
+    <!-- Situp Section -->
+    <div id="situp" class="exercise-section">
+        <h2>Sit-up Options</h2>
+        <form action="/analyze/analyze_situp/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video">
+            <button type="submit">Upload and Analyze Sit-up</button>
+        </form>
+        <br>
+        <a href="/analyze/live_situp/">
+            <button>Live Sit-up Detection</button>
+        </a>
+    </div>
+
+    <!-- Pushup Section -->
+    <div id="pushup" class="exercise-section">
+        <h2>Push-up Options</h2>
+        <form action="/analyze/upload/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video">
+            <button type="submit">Upload and Analyze Push-up</button>
+        </form>
+        <br>
+        <a href="/analyze/live/">
+            <button>Live Push-up Detection</button>
+        </a>
+    </div>
+
+    <!-- Plank Section -->
+    <div id="plank" class="exercise-section">
+        <h2>Plank Options</h2>
+        <form action="/analyze/upload_plank/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video">
+            <button type="submit">Upload and Analyze Plank</button>
+        </form>
+        <br>
+        <a href="/analyze/live_plank/">
+            <button>Live Plank Detection</button>
+        </a>
+    </div>
+
+</body>
+</html>
