@@ -37,50 +37,65 @@
     <h1>Exercise Analyzer</h1>
 
     <div class="exercise-options">
-        <button onclick="showSection('situp')">Sit-up</button>
-        <button onclick="showSection('pushup')">Push-up</button>
+        <button onclick="showSection('situp')">Sit-Up</button>
+        <button onclick="showSection('pushup')">Push-Up</button>
         <button onclick="showSection('plank')">Plank</button>
+        <button onclick="showSection('squat')">Squat</button>
     </div>
 
-    <!-- Situp Section -->
+    <!-- Sit-Up Section -->
     <div id="situp" class="exercise-section">
-        <h2>Sit-up Options</h2>
+        <h2>Sit-Up Options</h2>
         <form action="/analyze/analyze_situp/" method="post" enctype="multipart/form-data">
             {% csrf_token %}
-            <input type="file" name="video">
-            <button type="submit">Upload and Analyze Sit-up</button>
+            <input type="file" name="video" required>
+            <button type="submit">Upload and Analyze Sit-Up</button>
         </form>
         <br>
         <a href="/analyze/live_situp/">
-            <button>Live Sit-up Detection</button>
+            <button>Live Sit-Up Detection</button>
         </a>
     </div>
 
-    <!-- Pushup Section -->
+    <!-- Push-Up Section -->
     <div id="pushup" class="exercise-section">
-        <h2>Push-up Options</h2>
-        <form action="/analyze/upload/" method="post" enctype="multipart/form-data">
+        <h2>Push-Up Options</h2>
+        <form action="/analyze/analyze_pushup/" method="post" enctype="multipart/form-data">
             {% csrf_token %}
-            <input type="file" name="video">
-            <button type="submit">Upload and Analyze Push-up</button>
+            <input type="file" name="video" required>
+            <button type="submit">Upload and Analyze Push-Up</button>
         </form>
         <br>
-        <a href="/analyze/live/">
-            <button>Live Push-up Detection</button>
+        <a href="/analyze/live_pushup/">
+            <button>Live Push-Up Detection</button>
         </a>
     </div>
 
     <!-- Plank Section -->
     <div id="plank" class="exercise-section">
         <h2>Plank Options</h2>
-        <form action="/analyze/upload_plank/" method="post" enctype="multipart/form-data">
+        <form action="/analyze/analyze_plank/" method="post" enctype="multipart/form-data">
             {% csrf_token %}
-            <input type="file" name="video">
+            <input type="file" name="video" required>
             <button type="submit">Upload and Analyze Plank</button>
         </form>
         <br>
         <a href="/analyze/live_plank/">
             <button>Live Plank Detection</button>
+        </a>
+    </div>
+
+    <!-- Squat Section -->
+    <div id="squat" class="exercise-section">
+        <h2>Squat Options</h2>
+        <form action="/analyze/analyze_squat/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video" required>
+            <button type="submit">Upload and Analyze Squat</button>
+        </form>
+        <br>
+        <a href="/analyze/live_squat/">
+            <button>Live Squat Detection</button>
         </a>
     </div>
 

@@ -9,7 +9,8 @@ db.sqlite3
 # Training & video data
 Dataset/
 SitupDataset/
-Correct sequence/
+PushupDataset/
+SquatDataset/
 uploaded_videos/
 models/
 training.log
