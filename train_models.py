@@ -6,7 +6,6 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (TimeDistributed, LSTM, Dense, Dropout,
                                      Flatten, Input, BatchNormalization)
 from tensorflow.keras.applications import MobileNetV2
-# from tensorflow.keras.utils import to_categorical # Not strictly needed for sparse_categorical_crossentropy
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 from tensorflow.keras.callbacks import (EarlyStopping, ModelCheckpoint,
@@ -14,24 +13,25 @@ from tensorflow.keras.callbacks import (EarlyStopping, ModelCheckpoint,
 from tensorflow.keras.optimizers import Adam
 import time
 from concurrent.futures import ThreadPoolExecutor
-import random # For more augmentations
+import random
 
-# Configuration optimized for CPU and small dataset
+# --- IMPROVEMENT 1: Refined Configuration ---
+# Adjusted learning rate, epochs, and patience for more robust training.
 CONFIG = {
     'frame_count': 16,
-    'image_size': (160, 160), # MobileNetV2 preferred sizes include 96, 128, 160, 192, 224
-    'batch_size': 4, # Keep small for CPU, can increase if memory allows
-    'epochs': 30, # Increased epochs, EarlyStopping will manage
-    'lstm_units': [64, 32], # Kept as is, can be tuned
-    'dropout_rate': 0.4, # Slightly increased dropout
+    'image_size': (160, 160),
+    'batch_size': 4,
+    'epochs': 50,  # Increased epochs for more thorough training
+    'lstm_units': [64, 32],
+    'dropout_rate': 0.5,  # Increased dropout for better regularization
     'test_size': 0.2,
     'validation_split': 0.2,
     'random_state': 42,
-    'learning_rate': 1e-4, # Adam optimizer default is 1e-3, 1e-4 is a good start
-    'num_parallel_calls': os.cpu_count() // 2 or 1, # Use more available cores cautiously
+    'learning_rate': 5e-5,  # Lowered learning rate for finer tuning
+    'num_parallel_calls': os.cpu_count() or 1,
     'use_augmentation': True,
-    'early_stopping_patience': 7, # Increased patience
-    'reduce_lr_patience': 4   # Increased patience
+    'early_stopping_patience': 10,  # Increased patience
+    'reduce_lr_patience': 5       # Increased patience
 }
 
 class ExerciseModelTrainer:
@@ -49,9 +49,11 @@ class ExerciseModelTrainer:
             input_shape=(*CONFIG['image_size'], 3),
             pooling='avg'
         )
-        base_model.trainable = False # Freeze base model
+        base_model.trainable = False
         return base_model
 
+    # --- IMPROVEMENT 2: More Advanced Data Augmentation ---
+    # Added zoom and color jitter to create more varied training data.
     def _augment_frame(self, frame):
         """Apply more diverse augmentations to a frame"""
         # Horizontal Flip
@@ -59,20 +61,30 @@ class ExerciseModelTrainer:
             frame = cv2.flip(frame, 1)
 
         # Rotation
-        if random.random() > 0.5:
-            angle = random.uniform(-10, 10) # Rotate between -10 and 10 degrees
+        if random.random() > 0.6: # Slightly less frequent
+            angle = random.uniform(-15, 15)
             M = cv2.getRotationMatrix2D((CONFIG['image_size'][0]//2, CONFIG['image_size'][1]//2), angle, 1)
             frame = cv2.warpAffine(frame, M, CONFIG['image_size'])
 
-        # Brightness
+        # Brightness/Contrast
         if random.random() > 0.5:
-            value = random.uniform(0.7, 1.3) # Adjust brightness
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            h, s, v_channel = cv2.split(hsv)
-            v_channel = np.clip(v_channel * value, 0, 255).astype(np.uint8)
-            final_hsv = cv2.merge((h, s, v_channel))
-            frame = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
+            alpha = random.uniform(0.8, 1.2) # Contrast
+            beta = random.randint(-20, 20)      # Brightness
+            frame = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
             
+        # Zoom
+        if random.random() > 0.6:
+            zoom_factor = random.uniform(1.0, 1.2)
+            h, w = frame.shape[:2]
+            ch, cw = h // 2, w // 2 # Center
+            
+            # Crop a zoomed-in area
+            h_crop, w_crop = int(h / zoom_factor), int(w / zoom_factor)
+            h_start, w_start = ch - h_crop // 2, cw - w_crop // 2
+            
+            cropped = frame[h_start:h_start+h_crop, w_start:w_start+w_crop]
+            frame = cv2.resize(cropped, (w, h))
+
         return frame
 
     def _load_single_video(self, video_path_label_tuple):
@@ -80,54 +92,32 @@ class ExerciseModelTrainer:
         try:
             cap = cv2.VideoCapture(str(video_path))
             frames = []
-            processed_frames_count = 0
+            
+            # Decide if this video will be augmented
+            augment_this_video = CONFIG['use_augmentation'] and random.random() > 0.4 # Augment 60% of videos
 
-            while cap.isOpened() and processed_frames_count < CONFIG['frame_count']:
+            while len(frames) < CONFIG['frame_count']:
                 ret, frame = cap.read()
                 if not ret:
                     break
 
                 frame = cv2.resize(frame, CONFIG['image_size'])
                 
-                # Augmentation applied only during training (not explicitly handled here, but good to note)
-                # For data loading, it's often better to augment on-the-fly in a generator
-                # However, for simplicity here, we apply if use_augmentation is True
-                if CONFIG['use_augmentation'] and random.random() > 0.5: # Apply augmentation to some videos
-                    augmented_frame_set = []
-                    for _ in range(CONFIG['frame_count']): # Augment all frames of this video consistently if chosen
-                        # Create a copy for augmentation to avoid modifying the original frame for other ops
-                        frame_to_augment = frame.copy() 
-                        augmented_frame_set.append(self._augment_frame(frame_to_augment))
-                    # This logic is flawed for per-frame augmentation *within* _load_single_video
-                    # The original implementation augmented individual frames with 50% chance. Let's revert to that simpler one.
-                    # The _augment_frame should take the raw frame before normalization.
+                if augment_this_video:
+                    frame = self._augment_frame(frame)
 
-                # Corrected augmentation application per frame
-                raw_frame = frame.copy() # Keep original for potential non-augmented path
-                if CONFIG['use_augmentation'] and random.random() > 0.5:
-                     # Convert to BGR for augmentation functions if they expect it, then back if needed
-                    frame_bgr = raw_frame 
-                    frame_bgr = self._augment_frame(frame_bgr) # _augment_frame expects BGR
-                    final_frame = frame_bgr
-                else:
-                    final_frame = raw_frame
-
-                # Normalize
-                final_frame = final_frame.astype('float32') / 255.0
-                frames.append(final_frame)
-                processed_frames_count += 1
+                frame = frame.astype('float32') / 255.0
+                frames.append(frame)
 
             cap.release()
 
-            # Pad if video is shorter than required frames
             while len(frames) < CONFIG['frame_count']:
                 frames.append(np.zeros((*CONFIG['image_size'], 3), dtype=np.float32))
 
-            return np.array(frames[:CONFIG['frame_count']]), label
+            return np.array(frames), label
 
         except Exception as e:
             print(f"Error loading {video_path}: {str(e)}")
-            # Return a placeholder that can be filtered out
             return None, None
 
 
@@ -142,23 +132,17 @@ class ExerciseModelTrainer:
 
             for video_file in os.listdir(label_path):
                 video_path = label_path / video_file
-                if video_path.suffix.lower() in ['.mp4', '.avi', '.mov', '.mkv']: # Basic check
+                if video_path.suffix.lower() in ['.mp4', '.avi', '.mov', '.mkv']:
                     video_paths_labels.append((video_path, label_idx))
 
         if not video_paths_labels:
              return np.array([]), np.array([])
 
-        data_list = []
-        labels_list = []
-
-        # Using ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=CONFIG['num_parallel_calls']) as executor:
             results = list(executor.map(self._load_single_video, video_paths_labels))
 
-        for frames, label in results:
-            if frames is not None and label is not None:
-                data_list.append(frames)
-                labels_list.append(label)
+        data_list = [item[0] for item in results if item[0] is not None]
+        labels_list = [item[1] for item in results if item[1] is not None]
         
         if not data_list:
             return np.array([]), np.array([])
@@ -166,29 +150,35 @@ class ExerciseModelTrainer:
         return np.array(data_list), np.array(labels_list)
 
 
+    # --- IMPROVEMENT 3: Deeper and More Regularized Model ---
+    # Added layers to help the model learn more complex features and prevent overfitting.
     def _build_model(self):
         model = Sequential([
             Input(shape=(CONFIG['frame_count'], *CONFIG['image_size'], 3)),
             TimeDistributed(self.feature_extractor),
-            # TimeDistributed(Flatten()), # MobileNetV2 with pooling='avg' already flattens features
-            TimeDistributed(Dense(128, activation='relu')), # Increased units
-            TimeDistributed(BatchNormalization()),          # Added BatchNormalization
-            TimeDistributed(Dropout(CONFIG['dropout_rate'])), # Added Dropout
+            
+            # Added a dense block for more feature learning post-CNN
+            TimeDistributed(Dense(256, activation='relu')),
+            TimeDistributed(BatchNormalization()),
+            TimeDistributed(Dropout(CONFIG['dropout_rate'])),
 
             LSTM(CONFIG['lstm_units'][0], return_sequences=True),
-            BatchNormalization(), # Batch norm between LSTMs can help
+            BatchNormalization(),
+            Dropout(CONFIG['dropout_rate']), # Dropout after LSTM
+            
             LSTM(CONFIG['lstm_units'][1]),
             BatchNormalization(),
-
+            
+            Dense(64, activation='relu'),
             Dropout(CONFIG['dropout_rate']),
-            Dense(self.num_classes, activation='softmax') # Use num_classes
+            Dense(self.num_classes, activation='softmax')
         ])
 
         optimizer = Adam(learning_rate=CONFIG['learning_rate'])
 
         model.compile(
             optimizer=optimizer,
-            loss='sparse_categorical_crossentropy', # Use this if y_train is integer labels
+            loss='sparse_categorical_crossentropy',
             metrics=['accuracy']
         )
         return model
@@ -198,71 +188,33 @@ class ExerciseModelTrainer:
         start_time = time.time()
         data, labels = self._load_data()
 
-        if data.size == 0 or labels.size == 0:
-            raise ValueError(f"No training data loaded from {self.dataset_path}! Check dataset structure and video files.")
+        if data.size == 0:
+            raise ValueError(f"No training data found in {self.dataset_path}.")
 
         print(f"Loaded {len(data)} videos in {time.time()-start_time:.2f} seconds")
-        print(f"Data shape: {data.shape}, Labels shape: {labels.shape}")
-
-
-        # Check class distribution
+        
         unique_labels, counts = np.unique(labels, return_counts=True)
-        print("Class distribution in loaded data:")
-        for label, count in zip(unique_labels, counts):
-            print(f"  Label {label}: {count} samples")
+        print("Class distribution:", dict(zip(unique_labels, counts)))
 
         if len(unique_labels) < self.num_classes:
-            print(f"Warning: Only {len(unique_labels)} classes found in data, but model expects {self.num_classes}. This might lead to errors.")
+            print(f"Warning: Found {len(unique_labels)} classes, but model expects {self.num_classes}.")
 
-
-        # Split data
+        # Data splitting
+        stratify_labels = labels if len(unique_labels) > 1 and all(c > 1 for c in counts) else None
         X_train, X_test, y_train, y_test = train_test_split(
-            data, labels,
-            test_size=CONFIG['test_size'],
-            random_state=CONFIG['random_state'],
-            stratify=labels if len(unique_labels) > 1 and all(c > 1 for c in counts) else None # Stratify only if possible
+            data, labels, test_size=CONFIG['test_size'], random_state=CONFIG['random_state'], stratify=stratify_labels
         )
-
-        # Further split training set for validation
-        # Ensure y_train has enough samples for stratification if used
-        unique_ytrain_labels, ytrain_counts = np.unique(y_train, return_counts=True)
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train, y_train,
-            test_size=CONFIG['validation_split'],
-            random_state=CONFIG['random_state'],
-            stratify=y_train if len(unique_ytrain_labels) > 1 and all(c > 1 for c in ytrain_counts) else None
-        )
-
-        print(f"\nTrain shape: {X_train.shape}, {y_train.shape}")
-        print(f"Val shape: {X_val.shape}, {y_val.shape}")
-        print(f"Test shape: {X_test.shape}, {y_test.shape}")
-
+        
         # Build model
         model = self._build_model()
         model.summary()
 
         # Callbacks
-        self.model_path.parent.mkdir(parents=True, exist_ok=True) # Ensure model directory exists
+        self.model_path.parent.mkdir(parents=True, exist_ok=True)
         callbacks = [
-            EarlyStopping(
-                monitor='val_loss',
-                patience=CONFIG['early_stopping_patience'],
-                restore_best_weights=True,
-                verbose=1
-            ),
-            ModelCheckpoint(
-                str(self.model_path),
-                monitor='val_accuracy',
-                save_best_only=True,
-                verbose=1
-            ),
-            ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5, # Reduce LR by half
-                patience=CONFIG['reduce_lr_patience'],
-                min_lr=1e-7, # Lower min_lr
-                verbose=1
-            )
+            EarlyStopping(monitor='val_loss', patience=CONFIG['early_stopping_patience'], restore_best_weights=True, verbose=1),
+            ModelCheckpoint(str(self.model_path), monitor='val_accuracy', save_best_only=True, verbose=1),
+            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=CONFIG['reduce_lr_patience'], min_lr=1e-7, verbose=1)
         ]
 
         # Train model
@@ -271,58 +223,38 @@ class ExerciseModelTrainer:
             X_train, y_train,
             batch_size=CONFIG['batch_size'],
             epochs=CONFIG['epochs'],
-            validation_data=(X_val, y_val),
+            validation_split=CONFIG['validation_split'], # Use validation_split directly
             callbacks=callbacks,
             verbose=1
         )
 
-        # Evaluate on test set (using the best weights restored by EarlyStopping)
+        # Evaluate on the test set
         print("\nEvaluating on test set...")
-        # Load the best model saved by ModelCheckpoint for final evaluation
         if self.model_path.exists():
-            print("Loading best saved model for final evaluation...")
-            model = tf.keras.models.load_model(str(self.model_path)) # Re-load best model
+            print("Loading best model for final evaluation...")
+            model = tf.keras.models.load_model(str(self.model_path))
         
         test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
         print(f"Test Loss: {test_loss:.4f}")
         print(f"Test Accuracy: {test_acc:.4f}")
 
-        # Save the final model (ModelCheckpoint already saves the best one)
-        # model.save(str(self.model_path)) # This might overwrite the best one if last epoch wasn't best
-        print(f"\nBest model during training saved to {self.model_path}")
-
+        print(f"\nBest model saved to {self.model_path}")
         return history
 
 def main():
-    # Ensure models directory exists
     script_dir = Path(__file__).resolve().parent
     models_dir = script_dir / "models"
-    models_dir.mkdir(exist_ok=True, parents=True)
-
-    # Define common dataset root if applicable, or specify per trainer
-    # base_dataset_dir = script_dir / "datasets" # Example structure
-
+    models_dir.mkdir(exist_ok=True)
+    
+    # This list remains the same
     datasets_info = [
-        {
-            "name": "pushup",
-            "dataset_folder": "PushupDataset",
-            "labels": {"not_pushup": 0, "pushup": 1}
-        },
-        {
-            "name": "plank",
-            "dataset_folder": "Dataset", # Assuming this is for plank
-            "labels": {"not_plank": 0, "plank": 1}
-        },
-        {
-            "name": "situp",
-            "dataset_folder": "SitupDataset",
-            "labels": {"not_situp": 0, "situp": 1}
-        },
-        {
-            "name": "squat",
-            "dataset_folder": "SquatDataset",
-            "labels": {"not_squat": 0, "squat": 1}
-        }
+        {"name": "jumping_jacks", "dataset_folder": "JumpingJacksDataset", "labels": {"not_jumping_jacks": 0, "jumping_jacks": 1}},
+        {"name": "reverse_plank", "dataset_folder": "ReversePlankDataset", "labels": {"not_reverse_plank": 0, "reverse_plank": 1}},
+        {"name": "side_plank", "dataset_folder": "SidePlankDataset", "labels": {"not_side_plank": 0, "side_plank": 1}},
+        {"name": "pushup", "dataset_folder": "PushupDataset", "labels": {"not_pushup": 0, "pushup": 1}},
+        {"name": "plank", "dataset_folder": "PlankDataset", "labels": {"not_plank": 0, "plank": 1}},
+        {"name": "situp", "dataset_folder": "SitupDataset", "labels": {"not_situp": 0, "situp": 1}},
+        {"name": "squat", "dataset_folder": "SquatDataset", "labels": {"not_squat": 0, "squat": 1}},
     ]
 
     for info in datasets_info:
@@ -332,19 +264,16 @@ def main():
         
         trainer = ExerciseModelTrainer(
             dataset_path=script_dir / info["dataset_folder"],
-            model_path=models_dir / f"{info['name']}_classification_model.keras", # Use .keras format
+            model_path=models_dir / f"{info['name']}_classification_model.keras",
             labels=info["labels"]
         )
         try:
             trainer.train()
-        except ValueError as e:
-            print(f"Could not train {info['name']} model: {e}")
         except Exception as e:
-            print(f"An unexpected error occurred during {info['name']} training: {e}")
+            print(f"Could not train {info['name']} model: {e}")
 
 
 if __name__ == "__main__":
-    # Set memory growth for GPUs if available, to avoid OOM errors
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:

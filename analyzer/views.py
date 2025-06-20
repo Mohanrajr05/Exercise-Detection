@@ -51,12 +51,19 @@ PUSHUP_MODEL_PATH = MODEL_DIR / "pushup_classification_model.keras"
 PLANK_MODEL_PATH = MODEL_DIR / "plank_classification_model.keras"
 SITUP_MODEL_PATH = MODEL_DIR / "situp_classification_model.keras"
 SQUAT_MODEL_PATH = MODEL_DIR / "squat_classification_model.keras"
+JUMPING_JACKS_MODEL_PATH = MODEL_DIR / "jumping_jacks_classification_model.keras"
+REVERSE_PLANK_MODEL_PATH = MODEL_DIR / "reverse_plank_classification_model.keras"
+SIDE_PLANK_MODEL_PATH = MODEL_DIR / "side_plank_classification_model.keras"
 
+# newly updated (10-06-2025)
 
 pushup_model = try_load_model(PUSHUP_MODEL_PATH)
 plank_model = try_load_model(PLANK_MODEL_PATH)
 situp_model = try_load_model(SITUP_MODEL_PATH)
 squat_model = try_load_model(SQUAT_MODEL_PATH)
+jumping_jacks_model = try_load_model(JUMPING_JACKS_MODEL_PATH)
+reverse_plank_model = try_load_model(REVERSE_PLANK_MODEL_PATH)
+side_plank_model = try_load_model(SIDE_PLANK_MODEL_PATH)
 
 # --- MediaPipe Pose Setup ---
 mp_pose = mp.solutions.pose
@@ -317,6 +324,125 @@ def rule_based_squat_analyzer(video_path_str):
     cap.release()
     return {'squat_count': squat_counter}
 
+# newly updated (10-06-2025)
+
+def rule_based_jumping_jacks_analyzer(video_path_str):
+    cap = cv2.VideoCapture(video_path_str)
+    jj_counter = 0
+    # State: False = legs together (down), True = legs apart (up)
+    jj_state = False
+    consecutive_frames = 0
+    min_frames_for_state_change = 2
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret: break
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb_frame)
+        if result.pose_landmarks:
+            landmarks = result.pose_landmarks.landmark
+            try:
+                # Get landmarks for shoulders, hips, and ankles
+                shoulder_l = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+                shoulder_r = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+                ankle_l = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value]
+                ankle_r = landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value]
+                wrist_l = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value]
+
+                # Calculate horizontal distance between ankles normalized by shoulder width
+                shoulder_width = abs(shoulder_l.x - shoulder_r.x)
+                ankle_dist = abs(ankle_l.x - ankle_r.x)
+                
+                # Check if arms are up (y-coordinate of wrist is less than shoulder)
+                arms_are_up = wrist_l.y < shoulder_l.y
+
+                # Condition for "up" state: ankles are wide apart and arms are up
+                if ankle_dist > shoulder_width * 0.8 and arms_are_up and not jj_state:
+                    consecutive_frames += 1
+                    if consecutive_frames >= min_frames_for_state_change:
+                        jj_state = True
+                        consecutive_frames = 0
+                # Condition for "down" state: ankles are close together
+                elif ankle_dist < shoulder_width * 0.4 and jj_state:
+                    consecutive_frames += 1
+                    if consecutive_frames >= min_frames_for_state_change:
+                        jj_state = False
+                        jj_counter += 1 # Count rep on returning to down state
+                        consecutive_frames = 0
+                else:
+                    consecutive_frames = 0
+            except Exception:
+                consecutive_frames = 0
+                pass
+    cap.release()
+    return {'jumping_jacks_count': jj_counter}
+
+
+def rule_based_reverse_plank_analyzer(video_path_str):
+    cap = cv2.VideoCapture(video_path_str)
+    plank_frames_count = 0
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret: break
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb_frame)
+        if result.pose_landmarks:
+            landmarks = result.pose_landmarks.landmark
+            try:
+                # Use left side landmarks for consistency
+                shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                
+                body_angle = calculate_angle(shoulder, hip, ankle)
+
+                # For reverse plank, body should be straight (angle ~180)
+                if body_angle > 150 and body_angle < 210:
+                    plank_frames_count += 1
+            except Exception:
+                pass
+    cap.release()
+    plank_seconds = round(plank_frames_count / fps, 2)
+    return {'reverse_plank_duration_seconds': plank_seconds}
+
+
+def rule_based_side_plank_analyzer(video_path_str):
+    cap = cv2.VideoCapture(video_path_str)
+    plank_frames_count = 0
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret: break
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb_frame)
+        if result.pose_landmarks:
+            landmarks = result.pose_landmarks.landmark
+            try:
+                # Check both left and right sides, and see which one is more visible/straight
+                shoulder_l = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                hip_l = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                ankle_l = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                
+                shoulder_r = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+                hip_r = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+                ankle_r = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+                
+                body_angle_left = calculate_angle(shoulder_l, hip_l, ankle_l)
+                body_angle_right = calculate_angle(shoulder_r, hip_r, ankle_r)
+
+                # A good side plank has a straight body on the visible side
+                if (body_angle_left > 150 and body_angle_left < 210) or \
+                   (body_angle_right > 150 and body_angle_right < 210):
+                    plank_frames_count += 1
+            except Exception:
+                pass
+    cap.release()
+    plank_seconds = round(plank_frames_count / fps, 2)
+    return {'side_plank_duration_seconds': plank_seconds}
+
 # --- Django Views for Upload ---
 @csrf_exempt
 def upload_and_analyze_pushup(request):
@@ -389,6 +515,57 @@ def upload_and_analyze_squat(request):
         finally:
             if filepath.exists():
                  os.remove(filepath)
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+@csrf_exempt
+def upload_and_analyze_jumping_jacks(request):
+    if request.method == 'POST' and request.FILES.get('video'):
+        video = request.FILES['video']
+        fs = FileSystemStorage(location=UPLOAD_DIR)
+        filename = fs.save(video.name, video)
+        filepath = UPLOAD_DIR / filename
+        try:
+            analysis_results = analyze_uploaded_video_with_model(filepath, jumping_jacks_model, "jumping_jacks", rule_based_jumping_jacks_analyzer)
+            return JsonResponse(analysis_results)
+        except Exception as e:
+            return JsonResponse({'error': f'Error analyzing the video: {str(e)}'}, status=500)
+        finally:
+            if filepath.exists(): os.remove(filepath)
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+@csrf_exempt
+def upload_and_analyze_reverse_plank(request):
+    if request.method == 'POST' and request.FILES.get('video'):
+        video = request.FILES['video']
+        fs = FileSystemStorage(location=UPLOAD_DIR)
+        filename = fs.save(video.name, video)
+        filepath = UPLOAD_DIR / filename
+        try:
+            analysis_results = analyze_uploaded_video_with_model(filepath, reverse_plank_model, "reverse_plank", rule_based_reverse_plank_analyzer)
+            return JsonResponse(analysis_results)
+        except Exception as e:
+            return JsonResponse({'error': f'Error analyzing the video: {str(e)}'}, status=500)
+        finally:
+            if filepath.exists(): os.remove(filepath)
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+@csrf_exempt
+def upload_and_analyze_side_plank(request):
+    if request.method == 'POST' and request.FILES.get('video'):
+        video = request.FILES['video']
+        fs = FileSystemStorage(location=UPLOAD_DIR)
+        filename = fs.save(video.name, video)
+        filepath = UPLOAD_DIR / filename
+        try:
+            analysis_results = analyze_uploaded_video_with_model(filepath, side_plank_model, "side_plank", rule_based_side_plank_analyzer)
+            return JsonResponse(analysis_results)
+        except Exception as e:
+            return JsonResponse({'error': f'Error analyzing the video: {str(e)}'}, status=500)
+        finally:
+            if filepath.exists(): os.remove(filepath)
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
 
@@ -751,6 +928,200 @@ def gen_squat_frames():
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
     camera.release()
 
+# In views.py, add these with the other gen_*_frames live functions
+
+def gen_jumping_jacks_frames():
+    camera = cv2.VideoCapture(0)
+    jj_counter, jj_state, consecutive_frames_rule, min_frames = 0, False, 0, 2
+    
+    frames_for_model_buffer = []
+    model_label, model_label_color = "Analyzing...", (0, 255, 255)
+
+    while True:
+        success, frame = camera.read()
+        if not success: break
+        
+        processed_frame = cv2.resize(frame.copy(), (640, 480))
+
+        # Model prediction part
+        frames_for_model_buffer.append(frame.copy())
+        if len(frames_for_model_buffer) == MODEL_CONFIG['frame_count']:
+            if jumping_jacks_model:
+                model_input = preprocess_frames_for_model(frames_for_model_buffer)
+                prediction = jumping_jacks_model.predict(model_input, verbose=0)
+                if np.argmax(prediction[0]) == 1:
+                    model_label, model_label_color = "Jumping Jacks", (0, 255, 0)
+                else:
+                    model_label, model_label_color = "Not Jumping Jacks", (0, 0, 255)
+            else:
+                model_label, model_label_color = "JJ Model N/A", (255,0,0)
+            frames_for_model_buffer.pop(0)
+
+        # Rule-based counting part
+        rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb_frame)
+        if result.pose_landmarks:
+            landmarks = result.pose_landmarks.landmark
+            try:
+                shoulder_l = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+                shoulder_r = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+                ankle_l = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value]
+                ankle_r = landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value]
+                wrist_l = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value]
+
+                shoulder_width = abs(shoulder_l.x - shoulder_r.x)
+                ankle_dist = abs(ankle_l.x - ankle_r.x)
+                arms_are_up = wrist_l.y < shoulder_l.y
+
+                if ankle_dist > shoulder_width * 0.8 and arms_are_up and not jj_state:
+                    consecutive_frames_rule += 1
+                    if consecutive_frames_rule >= min_frames:
+                        jj_state = True
+                        consecutive_frames_rule = 0
+                elif ankle_dist < shoulder_width * 0.4 and jj_state:
+                    consecutive_frames_rule += 1
+                    if consecutive_frames_rule >= min_frames:
+                        jj_state = False
+                        jj_counter += 1
+                        consecutive_frames_rule = 0
+                else:
+                    consecutive_frames_rule = 0
+                draw_landmarks(processed_frame, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+            except Exception: pass
+        
+        cv2.putText(processed_frame, f"Jumping Jacks: {jj_counter}", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(processed_frame, model_label, (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, model_label_color, 2)
+
+        ret, buffer = cv2.imencode('.jpg', processed_frame)
+        yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+    camera.release()
+
+
+def gen_reverse_plank_frames():
+    # This logic is very similar to the regular plank, timing the duration
+    camera = cv2.VideoCapture(0)
+    plank_start_time = None
+    plank_duration = 0
+    
+    frames_for_model_buffer = []
+    model_label, model_label_color = "Analyzing...", (0, 255, 255)
+
+    while True:
+        success, frame = camera.read()
+        if not success: break
+        
+        processed_frame = cv2.resize(frame.copy(), (640, 480))
+        
+        # Model prediction
+        frames_for_model_buffer.append(frame.copy())
+        if len(frames_for_model_buffer) == MODEL_CONFIG['frame_count']:
+            if reverse_plank_model:
+                model_input = preprocess_frames_for_model(frames_for_model_buffer)
+                prediction = reverse_plank_model.predict(model_input, verbose=0)
+                if np.argmax(prediction[0]) == 1:
+                    model_label, model_label_color = "Reverse Plank", (0, 255, 0)
+                else:
+                    model_label, model_label_color = "Not Reverse Plank", (0, 0, 255)
+            else:
+                model_label, model_label_color = "Model N/A", (255,0,0)
+            frames_for_model_buffer.pop(0)
+
+        # Rule-based timing
+        rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb_frame)
+        currently_planking = False
+        if result.pose_landmarks:
+            landmarks = result.pose_landmarks.landmark
+            try:
+                shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                body_angle = calculate_angle(shoulder, hip, ankle)
+
+                if body_angle > 150 and body_angle < 210:
+                    currently_planking = True
+                    if plank_start_time is None: plank_start_time = time.time()
+                    plank_duration = int(time.time() - plank_start_time)
+                else:
+                    plank_start_time = None
+                draw_landmarks(processed_frame, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+            except Exception: plank_start_time = None
+        else:
+            plank_start_time = None
+
+        cv2.putText(processed_frame, model_label, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, model_label_color, 2)
+        if plank_start_time is not None:
+             cv2.putText(processed_frame, f"Duration: {plank_duration}s", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+        ret, buffer = cv2.imencode('.jpg', processed_frame)
+        yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+    camera.release()    
+    
+# gen_side_plank_frames would be very similar to gen_reverse_plank_frames, just calling side_plank_model
+# and using its logic. For brevity, I'll omit the redundant live generator for side plank, 
+# as its structure is identical to the reverse plank one. You can create it by copying 
+# gen_reverse_plank_frames and replacing "reverse" with "side".
+
+def gen_side_plank_frames():
+    # This logic is very similar to the regular plank, timing the duration
+    camera = cv2.VideoCapture(0)
+    plank_start_time = None
+    plank_duration = 0
+    
+    frames_for_model_buffer = []
+    model_label, model_label_color = "Analyzing...", (0, 255, 255)
+
+    while True:
+        success, frame = camera.read()
+        if not success: break
+        
+        processed_frame = cv2.resize(frame.copy(), (640, 480))
+        
+        # Model prediction
+        frames_for_model_buffer.append(frame.copy())
+        if len(frames_for_model_buffer) == MODEL_CONFIG['frame_count']:
+            if side_plank_model:
+                model_input = preprocess_frames_for_model(frames_for_model_buffer)
+                prediction = side_plank_model.predict(model_input, verbose=0)
+                if np.argmax(prediction[0]) == 1:
+                    model_label, model_label_color = "Side Plank", (0, 255, 0)
+                else:
+                    model_label, model_label_color = "Not Side Plank", (0, 0, 255)
+            else:
+                model_label, model_label_color = "Model N/A", (255,0,0)
+            frames_for_model_buffer.pop(0)
+
+        # Rule-based timing
+        rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb_frame)
+        currently_planking = False
+        if result.pose_landmarks:
+            landmarks = result.pose_landmarks.landmark
+            try:
+                shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                body_angle = calculate_angle(shoulder, hip, ankle)
+
+                if body_angle > 150 and body_angle < 210:
+                    currently_planking = True
+                    if plank_start_time is None: plank_start_time = time.time()
+                    plank_duration = int(time.time() - plank_start_time)
+                else:
+                    plank_start_time = None
+                draw_landmarks(processed_frame, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+            except Exception: plank_start_time = None
+        else:
+            plank_start_time = None
+
+        cv2.putText(processed_frame, model_label, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, model_label_color, 2)
+        if plank_start_time is not None:
+             cv2.putText(processed_frame, f"Duration: {plank_duration}s", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+        ret, buffer = cv2.imencode('.jpg', processed_frame)
+        yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+    camera.release()
+
 
 # --- URL Endpoints for Live Video ---
 def live_pushup(request):
@@ -765,6 +1136,16 @@ def live_plank(request):
 def live_squat(request):
     return StreamingHttpResponse(gen_squat_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
 
+def live_jumping_jacks(request):
+    return StreamingHttpResponse(gen_jumping_jacks_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
+
+def live_reverse_plank(request):
+    return StreamingHttpResponse(gen_reverse_plank_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
+
+def live_side_plank(request):
+    return StreamingHttpResponse(gen_side_plank_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
+
+
 # --- Home Page ---
 def home(request):
     # You'll need to create/update this template to provide UIs for uploading videos
@@ -774,4 +1155,7 @@ def home(request):
         'plank_model_loaded': plank_model is not None,
         'situp_model_loaded': situp_model is not None,
         'squat_model_loaded': squat_model is not None,
+        'jumping_jacks_model_loaded': jumping_jacks_model is not None,
+        'reverse_plank_model_loaded': reverse_plank_model is not None,
+        'side_plank_model_loaded': side_plank_model is not None,
     })
