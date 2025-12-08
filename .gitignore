@@ -7,10 +7,14 @@ db.sqlite3
 .venv/
 
 # Training & video data
-Dataset/
+PlankDataset/
 SitupDataset/
 PushupDataset/
 SquatDataset/
+ReversePlankDataset/
+SidePlankDataset/
+JumpingJacksDataset/
+LungesDataset/
 uploaded_videos/
 models/
 training.log

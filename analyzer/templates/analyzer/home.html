@@ -41,6 +41,9 @@
         <button onclick="showSection('pushup')">Push-Up</button>
         <button onclick="showSection('plank')">Plank</button>
         <button onclick="showSection('squat')">Squat</button>
+        <button onclick="showSection('jumping_jacks')">Jumping Jacks</button>
+        <button onclick="showSection('reverse_plank')">Reverse Plank</button>
+        <button onclick="showSection('side_plank')">Side Plank</button>
     </div>
 
     <!-- Sit-Up Section -->
@@ -96,6 +99,48 @@
         <br>
         <a href="/analyze/live_squat/">
             <button>Live Squat Detection</button>
+        </a>
+    </div>
+
+    <!-- Jumping Jacks Section -->
+    <div id="jumping_jacks" class="exercise-section">
+        <h2>Jumping Jacks Options</h2>
+        <form action="/analyze/analyze_jumping_jacks/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video" required>
+            <button type="submit">Upload and Analyze Jumping Jacks</button>
+        </form>
+        <br>
+        <a href="/analyze/live_jumping_jacks/">
+            <button>Live Jumping Jacks Detection</button>
+        </a>
+    </div>
+
+    <!-- Reverse Plank Section -->
+    <div id="reverse_plank" class="exercise-section">
+        <h2>Reverse Plank Options</h2>
+        <form action="/analyze/analyze_reverse_plank/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video" required>
+            <button type="submit">Upload and Analyze Reverse Plank</button>
+        </form>
+        <br>
+        <a href="/analyze/live_reverse_plank/">
+            <button>Live Reverse Plank Detection</button>
+        </a>
+    </div>
+
+    <!-- Side Plank Section -->
+    <div id="side_plank" class="exercise-section">
+        <h2>Side Plank Options</h2>
+        <form action="/analyze/analyze_side_plank/" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="video" required>
+            <button type="submit">Upload and Analyze Side Plank</button>
+        </form>
+        <br>
+        <a href="/analyze/live_side_plank/">
+            <button>Live Side Plank Detection</button>
         </a>
     </div>
 

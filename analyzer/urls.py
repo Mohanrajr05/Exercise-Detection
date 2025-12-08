@@ -13,4 +13,10 @@ urlpatterns = [
     path('analyze/analyze_plank/', views.upload_and_analyze_plank, name='analyze_plank'),
     path('analyze/analyze_situp/', views.upload_and_analyze_situp, name='analyze_situp'),
     path('analyze/analyze_squat/', views.upload_and_analyze_squat, name='analyze_squat'),
+    path('analyze/analyze_jumping_jacks/', views.upload_and_analyze_jumping_jacks, name='upload_jumping_jacks'),
+    path('analyze/analyze_reverse_plank/', views.upload_and_analyze_reverse_plank, name='upload_reverse_plank'),
+    path('analyze/analyze_side_plank/', views.upload_and_analyze_side_plank, name='upload_side_plank'),
+    path('analyze/live_jumping_jacks/', views.live_jumping_jacks, name='live_jumping_jacks'),
+    path('analyze/live_reverse_plank/', views.live_reverse_plank, name='live_reverse_plank'),
+    path('analyze/live_side_plank/', views.live_side_plank, name='live_side_plank'),
 ]
