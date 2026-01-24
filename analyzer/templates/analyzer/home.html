@@ -2,147 +2,447 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exercise Analyzer</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #00d4ff, #7b2fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .exercise-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .exercise-btn {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .exercise-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .exercise-btn.active {
+            background: linear-gradient(135deg, #00d4ff, #00ff88);
+            color: #1a1a2e;
+        }
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        .video-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
             text-align: center;
         }
-        .exercise-options {
-            margin-top: 20px;
+        #videoElement {
+            width: 100%;
+            max-width: 640px;
+            border-radius: 10px;
+            transform: scaleX(-1); /* Mirror the video */
         }
-        .exercise-section {
+        #canvasElement {
             display: none;
-            margin-top: 20px;
         }
-        button {
-            padding: 10px 20px;
-            margin: 10px;
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        .control-btn {
+            padding: 15px 30px;
             font-size: 18px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #startBtn {
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            color: #1a1a2e;
+        }
+        #stopBtn {
+            background: linear-gradient(135deg, #ff6b6b, #ff8e53);
+            color: white;
+        }
+        .stats-panel {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+        }
+        .stat-box {
+            background: rgba(0,212,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #aaa;
+            text-transform: uppercase;
+        }
+        .stat-value {
+            font-size: 48px;
+            font-weight: bold;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .feedback-box {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .feedback-title {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 10px;
+        }
+        #feedbackText {
+            font-size: 18px;
+            color: #00ff88;
+            min-height: 50px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-active {
+            background: #00ff88;
+            animation: pulse 1s infinite;
+        }
+        .status-inactive {
+            background: #666;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .upload-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+        }
+        .upload-section h3 {
+            margin-bottom: 15px;
+        }
+        .upload-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .upload-form input[type="file"] {
+            padding: 10px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            border-radius: 8px;
+            color: white;
+        }
+        .upload-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #764ba2, #667eea);
+            border: none;
+            border-radius: 8px;
+            color: white;
             cursor: pointer;
         }
-    </style>
-    <script>
-        function showSection(sectionId) {
-            var sections = document.getElementsByClassName('exercise-section');
-            for (var i = 0; i < sections.length; i++) {
-                sections[i].style.display = 'none';
-            }
-            document.getElementById(sectionId).style.display = 'block';
+        #uploadResult {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            display: none;
         }
-    </script>
+        .camera-error {
+            padding: 40px;
+            text-align: center;
+            color: #ff6b6b;
+        }
+    </style>
 </head>
 <body>
+    <div class="container">
+        <h1>🏋️ Exercise Analyzer</h1>
+        
+        <div class="exercise-buttons">
+            <button class="exercise-btn active" data-exercise="pushup">Push-Up</button>
+            <button class="exercise-btn" data-exercise="squat">Squat</button>
+            <button class="exercise-btn" data-exercise="situp">Sit-Up</button>
+            <button class="exercise-btn" data-exercise="plank">Plank</button>
+            <button class="exercise-btn" data-exercise="jumping_jacks">Jumping Jacks</button>
+            <button class="exercise-btn" data-exercise="reverse_plank">Reverse Plank</button>
+            <button class="exercise-btn" data-exercise="side_plank">Side Plank</button>
+        </div>
 
-    <h1>Exercise Analyzer</h1>
+        <div class="main-content">
+            <div class="video-container">
+                <video id="videoElement" autoplay playsinline></video>
+                <canvas id="canvasElement"></canvas>
+                <div class="controls">
+                    <button id="startBtn" class="control-btn">▶ Start Analysis</button>
+                    <button id="stopBtn" class="control-btn" style="display:none;">⏹ Stop</button>
+                </div>
+            </div>
 
-    <div class="exercise-options">
-        <button onclick="showSection('situp')">Sit-Up</button>
-        <button onclick="showSection('pushup')">Push-Up</button>
-        <button onclick="showSection('plank')">Plank</button>
-        <button onclick="showSection('squat')">Squat</button>
-        <button onclick="showSection('jumping_jacks')">Jumping Jacks</button>
-        <button onclick="showSection('reverse_plank')">Reverse Plank</button>
-        <button onclick="showSection('side_plank')">Side Plank</button>
+            <div class="stats-panel">
+                <div class="stat-box">
+                    <div class="stat-label">Current Exercise</div>
+                    <div id="exerciseName" style="font-size: 24px; color: #00d4ff;">Push-Up</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">
+                        <span id="statusIndicator" class="status-indicator status-inactive"></span>
+                        <span id="statType">Reps</span>
+                    </div>
+                    <div class="stat-value" id="statValue">0</div>
+                </div>
+                <div class="feedback-box">
+                    <div class="feedback-title">Real-time Feedback</div>
+                    <div id="feedbackText">Select an exercise and click Start</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <h3>📹 Or Upload a Video</h3>
+            <form id="uploadForm" class="upload-form" enctype="multipart/form-data">
+                <input type="file" name="video" accept="video/*" required>
+                <button type="submit" class="upload-btn">Analyze Video</button>
+            </form>
+            <div id="uploadResult"></div>
+        </div>
     </div>
 
-    <!-- Sit-Up Section -->
-    <div id="situp" class="exercise-section">
-        <h2>Sit-Up Options</h2>
-        <form action="/analyze/analyze_situp/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Sit-Up</button>
-        </form>
-        <br>
-        <a href="/analyze/live_situp/">
-            <button>Live Sit-Up Detection</button>
-        </a>
-    </div>
+    <script>
+        // State
+        let currentExercise = 'pushup';
+        let isAnalyzing = false;
+        let analysisInterval = null;
+        let stream = null;
 
-    <!-- Push-Up Section -->
-    <div id="pushup" class="exercise-section">
-        <h2>Push-Up Options</h2>
-        <form action="/analyze/analyze_pushup/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Push-Up</button>
-        </form>
-        <br>
-        <a href="/analyze/live_pushup/">
-            <button>Live Push-Up Detection</button>
-        </a>
-    </div>
+        // Elements
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvasElement');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const exerciseNameEl = document.getElementById('exerciseName');
+        const statValueEl = document.getElementById('statValue');
+        const statTypeEl = document.getElementById('statType');
+        const feedbackEl = document.getElementById('feedbackText');
+        const statusIndicator = document.getElementById('statusIndicator');
 
-    <!-- Plank Section -->
-    <div id="plank" class="exercise-section">
-        <h2>Plank Options</h2>
-        <form action="/analyze/analyze_plank/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Plank</button>
-        </form>
-        <br>
-        <a href="/analyze/live_plank/">
-            <button>Live Plank Detection</button>
-        </a>
-    </div>
+        // Exercise button handlers
+        document.querySelectorAll('.exercise-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.exercise-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentExercise = btn.dataset.exercise;
+                exerciseNameEl.textContent = btn.textContent;
+                
+                // Update stat type based on exercise
+                if (['plank', 'reverse_plank', 'side_plank'].includes(currentExercise)) {
+                    statTypeEl.textContent = 'Duration (seconds)';
+                } else {
+                    statTypeEl.textContent = 'Reps';
+                }
+                
+                // Reset stats
+                statValueEl.textContent = '0';
+                feedbackEl.textContent = 'Click Start to begin';
+            });
+        });
 
-    <!-- Squat Section -->
-    <div id="squat" class="exercise-section">
-        <h2>Squat Options</h2>
-        <form action="/analyze/analyze_squat/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Squat</button>
-        </form>
-        <br>
-        <a href="/analyze/live_squat/">
-            <button>Live Squat Detection</button>
-        </a>
-    </div>
+        // Start camera
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 640 }, 
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    } 
+                });
+                video.srcObject = stream;
+                await video.play();
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                return true;
+            } catch (err) {
+                console.error('Camera error:', err);
+                feedbackEl.textContent = '❌ Camera access denied. Please allow camera access.';
+                feedbackEl.style.color = '#ff6b6b';
+                return false;
+            }
+        }
 
-    <!-- Jumping Jacks Section -->
-    <div id="jumping_jacks" class="exercise-section">
-        <h2>Jumping Jacks Options</h2>
-        <form action="/analyze/analyze_jumping_jacks/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Jumping Jacks</button>
-        </form>
-        <br>
-        <a href="/analyze/live_jumping_jacks/">
-            <button>Live Jumping Jacks Detection</button>
-        </a>
-    </div>
+        // Stop camera
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        }
 
-    <!-- Reverse Plank Section -->
-    <div id="reverse_plank" class="exercise-section">
-        <h2>Reverse Plank Options</h2>
-        <form action="/analyze/analyze_reverse_plank/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Reverse Plank</button>
-        </form>
-        <br>
-        <a href="/analyze/live_reverse_plank/">
-            <button>Live Reverse Plank Detection</button>
-        </a>
-    </div>
+        // Send frame to server for analysis
+        async function analyzeFrame() {
+            if (!isAnalyzing || !video.videoWidth) return;
 
-    <!-- Side Plank Section -->
-    <div id="side_plank" class="exercise-section">
-        <h2>Side Plank Options</h2>
-        <form action="/analyze/analyze_side_plank/" method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <input type="file" name="video" required>
-            <button type="submit">Upload and Analyze Side Plank</button>
-        </form>
-        <br>
-        <a href="/analyze/live_side_plank/">
-            <button>Live Side Plank Detection</button>
-        </a>
-    </div>
+            // Draw video frame to canvas (flip it back to normal for server)
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            ctx.restore();
 
+            // Convert canvas to blob
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('frame', blob, 'frame.jpg');
+                formData.append('exercise', currentExercise);
+
+                try {
+                    const response = await fetch('/analyze/live_frame/', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        feedbackEl.textContent = data.error;
+                        feedbackEl.style.color = '#ff6b6b';
+                    } else {
+                        // Update stats
+                        if (data.reps !== undefined) {
+                            statValueEl.textContent = data.reps;
+                        } else if (data.duration !== undefined) {
+                            statValueEl.textContent = Math.floor(data.duration);
+                        }
+                        
+                        // Update feedback
+                        if (data.feedback && data.feedback.length > 0) {
+                            feedbackEl.innerHTML = data.feedback.map(f => {
+                                const color = f.includes('✓') || f.includes('Good') || f.includes('Great') || f.includes('Nice') ? '#00ff88' : '#00d4ff';
+                                return `<div style="color: ${color}">${f}</div>`;
+                            }).join('');
+                        }
+                    }
+                } catch (err) {
+                    console.error('Analysis error:', err);
+                }
+            }, 'image/jpeg', 0.8);
+        }
+
+        // Start analysis
+        startBtn.addEventListener('click', async () => {
+            const cameraStarted = await startCamera();
+            if (!cameraStarted) return;
+
+            isAnalyzing = true;
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            statusIndicator.classList.remove('status-inactive');
+            statusIndicator.classList.add('status-active');
+            feedbackEl.textContent = 'Analyzing...';
+            feedbackEl.style.color = '#00ff88';
+
+            // Reset state on server
+            await fetch('/analyze/reset_state/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ exercise: currentExercise })
+            });
+
+            // Analyze frames at ~10 FPS
+            analysisInterval = setInterval(analyzeFrame, 100);
+        });
+
+        // Stop analysis
+        stopBtn.addEventListener('click', () => {
+            isAnalyzing = false;
+            clearInterval(analysisInterval);
+            stopCamera();
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            statusIndicator.classList.remove('status-active');
+            statusIndicator.classList.add('status-inactive');
+            feedbackEl.textContent = 'Analysis stopped';
+        });
+
+        // Video upload handler
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const resultDiv = document.getElementById('uploadResult');
+            
+            resultDiv.style.display = 'block';
+            resultDiv.style.background = 'rgba(0,212,255,0.1)';
+            resultDiv.innerHTML = '⏳ Analyzing video...';
+
+            try {
+                const response = await fetch(`/analyze/analyze_${currentExercise}/`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.error) {
+                    resultDiv.style.background = 'rgba(255,107,107,0.2)';
+                    resultDiv.innerHTML = `❌ ${data.error}`;
+                } else {
+                    resultDiv.style.background = 'rgba(0,255,136,0.2)';
+                    if (data.reps !== undefined) {
+                        resultDiv.innerHTML = `✅ Analysis complete! <strong>${data.reps} reps</strong> detected.`;
+                    } else if (data.duration_seconds !== undefined) {
+                        resultDiv.innerHTML = `✅ Analysis complete! Duration: <strong>${data.duration_seconds} seconds</strong>`;
+                    }
+                }
+            } catch (err) {
+                resultDiv.style.background = 'rgba(255,107,107,0.2)';
+                resultDiv.innerHTML = '❌ Error analyzing video';
+            }
+        });
+    </script>
 </body>
 </html>

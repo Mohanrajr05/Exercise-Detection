@@ -652,3 +652,83 @@ def live_side_plank(request):
 def home(request):
     """Renders the main page."""
     return render(request, 'analyzer/home.html')
+
+# --- BROWSER-BASED FRAME ANALYSIS ---
+# Session-based state storage for each user
+import json
+import copy
+
+@csrf_exempt
+def reset_analysis_state(request):
+    """Reset the exercise state for a new session."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            exercise = data.get('exercise', 'pushup')
+        except:
+            exercise = request.POST.get('exercise', 'pushup')
+        
+        config = EXERCISE_CONFIG.get(exercise)
+        if config:
+            # Store fresh state in session
+            request.session[f'{exercise}_state'] = copy.deepcopy(config['initial_state'])
+            request.session.modified = True
+            return JsonResponse({'status': 'reset', 'exercise': exercise})
+        return JsonResponse({'error': 'Invalid exercise'}, status=400)
+    return JsonResponse({'error': 'POST required'}, status=405)
+
+@csrf_exempt  
+def analyze_live_frame(request):
+    """Analyze a single frame sent from the browser."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    if 'frame' not in request.FILES:
+        return JsonResponse({'error': 'No frame provided'}, status=400)
+    
+    exercise = request.POST.get('exercise', 'pushup')
+    config = EXERCISE_CONFIG.get(exercise)
+    if not config:
+        return JsonResponse({'error': f'Invalid exercise: {exercise}'}, status=400)
+    
+    try:
+        # Read image from request
+        frame_file = request.FILES['frame']
+        file_bytes = np.frombuffer(frame_file.read(), np.uint8)
+        frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            return JsonResponse({'error': 'Could not decode frame'}, status=400)
+        
+        # Get or initialize state from session
+        state_key = f'{exercise}_state'
+        if state_key not in request.session:
+            request.session[state_key] = copy.deepcopy(config['initial_state'])
+        
+        state = request.session[state_key]
+        
+        # Process frame with MediaPipe
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = pose_detector.process(rgb_frame)
+        
+        if results.pose_landmarks:
+            # Run exercise detection
+            state = config['rule_logic'](results.pose_landmarks.landmark, state)
+            # Save updated state to session
+            request.session[state_key] = state
+            request.session.modified = True
+        else:
+            state['feedback'] = ['No pose detected - ensure full body is visible']
+        
+        # Build response
+        response = {'status': 'success', 'feedback': state.get('feedback', [])}
+        
+        if 'count' in state:
+            response['reps'] = state['count']
+        if 'duration' in state:
+            response['duration'] = round(state.get('duration', 0), 1)
+        
+        return JsonResponse(response)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
