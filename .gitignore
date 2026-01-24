@@ -16,5 +16,7 @@ SidePlankDataset/
 JumpingJacksDataset/
 LungesDataset/
 uploaded_videos/
-models/
 training.log
+
+# Old model format (keep .keras files, exclude .h5 to save space)
+*.h5
