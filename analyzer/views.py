@@ -18,7 +18,16 @@ UPLOAD_DIR = BASE_DIR / 'uploaded_videos'
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # --- MEDIAPIPE INITIALIZATION ---
+# For video analysis (single-threaded), we use a shared instance
 pose_detector = mp_pose.Pose(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+
+def get_pose_detector():
+    """Create a fresh Pose detector for per-request use to avoid timestamp issues."""
+    return mp_pose.Pose(
+        min_detection_confidence=0.7, 
+        min_tracking_confidence=0.7,
+        static_image_mode=True  # Treat each frame as independent image
+    )
 
 # --- HELPER FUNCTIONS ---
 def calculate_angle(a, b, c):
@@ -707,9 +716,21 @@ def analyze_live_frame(request):
         
         state = request.session[state_key]
         
-        # Process frame with MediaPipe
+        # Process frame with MediaPipe using a fresh detector to avoid timestamp issues
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = pose_detector.process(rgb_frame)
+        
+        # Use static_image_mode detector for per-frame analysis
+        # This avoids timestamp synchronization issues in deployed environments
+        try:
+            with get_pose_detector() as frame_detector:
+                results = frame_detector.process(rgb_frame)
+        except Exception as mp_error:
+            # Fallback: if context manager fails, create detector manually
+            frame_detector = get_pose_detector()
+            try:
+                results = frame_detector.process(rgb_frame)
+            finally:
+                frame_detector.close()
         
         if results.pose_landmarks:
             # Run exercise detection
