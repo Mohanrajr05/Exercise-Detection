@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +11,7 @@
             padding: 0;
             box-sizing: border-box;
         }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e, #16213e);
@@ -17,6 +19,7 @@
             color: #fff;
             padding: 20px;
         }
+
         h1 {
             text-align: center;
             margin-bottom: 20px;
@@ -25,10 +28,12 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
         }
+
         .exercise-buttons {
             display: flex;
             flex-wrap: wrap;
@@ -36,6 +41,7 @@
             gap: 10px;
             margin-bottom: 20px;
         }
+
         .exercise-btn {
             padding: 12px 24px;
             font-size: 16px;
@@ -46,45 +52,55 @@
             color: white;
             transition: all 0.3s ease;
         }
+
         .exercise-btn:hover {
             transform: scale(1.05);
             box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
         }
+
         .exercise-btn.active {
             background: linear-gradient(135deg, #00d4ff, #00ff88);
             color: #1a1a2e;
         }
+
         .main-content {
             display: grid;
             grid-template-columns: 2fr 1fr;
             gap: 20px;
         }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
             }
         }
+
         .video-container {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 15px;
             padding: 20px;
             text-align: center;
         }
+
         #videoElement {
             width: 100%;
             max-width: 640px;
             border-radius: 10px;
-            transform: scaleX(-1); /* Mirror the video */
+            transform: scaleX(-1);
+            /* Mirror the video */
         }
+
         #canvasElement {
             display: none;
         }
+
         .controls {
             margin-top: 15px;
             display: flex;
             justify-content: center;
             gap: 10px;
         }
+
         .control-btn {
             padding: 15px 30px;
             font-size: 18px;
@@ -93,31 +109,37 @@
             cursor: pointer;
             transition: all 0.3s ease;
         }
+
         #startBtn {
             background: linear-gradient(135deg, #00ff88, #00d4ff);
             color: #1a1a2e;
         }
+
         #stopBtn {
             background: linear-gradient(135deg, #ff6b6b, #ff8e53);
             color: white;
         }
+
         .stats-panel {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 15px;
             padding: 20px;
         }
+
         .stat-box {
-            background: rgba(0,212,255,0.1);
+            background: rgba(0, 212, 255, 0.1);
             border-radius: 10px;
             padding: 20px;
             margin-bottom: 15px;
             text-align: center;
         }
+
         .stat-label {
             font-size: 14px;
             color: #aaa;
             text-transform: uppercase;
         }
+
         .stat-value {
             font-size: 48px;
             font-weight: bold;
@@ -125,22 +147,26 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+
         .feedback-box {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 10px;
             padding: 15px;
             margin-top: 15px;
         }
+
         .feedback-title {
             font-size: 14px;
             color: #aaa;
             margin-bottom: 10px;
         }
+
         #feedbackText {
             font-size: 18px;
             color: #00ff88;
             min-height: 50px;
         }
+
         .status-indicator {
             display: inline-block;
             width: 12px;
@@ -148,39 +174,54 @@
             border-radius: 50%;
             margin-right: 8px;
         }
+
         .status-active {
             background: #00ff88;
             animation: pulse 1s infinite;
         }
+
         .status-inactive {
             background: #666;
         }
+
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
+
         .upload-section {
             margin-top: 20px;
             padding: 20px;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 15px;
         }
+
         .upload-section h3 {
             margin-bottom: 15px;
         }
+
         .upload-form {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
             justify-content: center;
         }
+
         .upload-form input[type="file"] {
             padding: 10px;
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             border: none;
             border-radius: 8px;
             color: white;
         }
+
         .upload-btn {
             padding: 10px 20px;
             background: linear-gradient(135deg, #764ba2, #667eea);
@@ -189,12 +230,14 @@
             color: white;
             cursor: pointer;
         }
+
         #uploadResult {
             margin-top: 15px;
             padding: 10px;
             border-radius: 8px;
             display: none;
         }
+
         .camera-error {
             padding: 40px;
             text-align: center;
@@ -202,12 +245,14 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🏋️ Exercise Analyzer</h1>
-        
+
         <div class="exercise-buttons">
             <button class="exercise-btn active" data-exercise="pushup">Push-Up</button>
+            <button class="exercise-btn" data-exercise="bicep_curl">Bicep Curl</button>
             <button class="exercise-btn" data-exercise="squat">Squat</button>
             <button class="exercise-btn" data-exercise="situp">Sit-Up</button>
             <button class="exercise-btn" data-exercise="plank">Plank</button>
@@ -259,13 +304,9 @@
         // State
         let currentExercise = 'pushup';
         let isAnalyzing = false;
-        let analysisInterval = null;
-        let stream = null;
 
         // Elements
         const video = document.getElementById('videoElement');
-        const canvas = document.getElementById('canvasElement');
-        const ctx = canvas.getContext('2d');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         const exerciseNameEl = document.getElementById('exerciseName');
@@ -274,148 +315,156 @@
         const feedbackEl = document.getElementById('feedbackText');
         const statusIndicator = document.getElementById('statusIndicator');
 
+        // Create streaming image element
+        const streamImg = document.createElement('img');
+        streamImg.id = 'streamElement';
+        streamImg.style.width = '100%';
+        streamImg.style.maxWidth = '640px';
+        streamImg.style.borderRadius = '10px';
+        streamImg.style.display = 'none';
+        video.parentNode.insertBefore(streamImg, video.nextSibling);
+
         // Exercise button handlers
         document.querySelectorAll('.exercise-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                if (isAnalyzing) {
+                    stopAnalysis();
+                }
+
                 document.querySelectorAll('.exercise-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentExercise = btn.dataset.exercise;
                 exerciseNameEl.textContent = btn.textContent;
-                
+
                 // Update stat type based on exercise
                 if (['plank', 'reverse_plank', 'side_plank'].includes(currentExercise)) {
                     statTypeEl.textContent = 'Duration (seconds)';
                 } else {
                     statTypeEl.textContent = 'Reps';
                 }
-                
+
                 // Reset stats
                 statValueEl.textContent = '0';
                 feedbackEl.textContent = 'Click Start to begin';
             });
         });
 
-        // Start camera
-        async function startCamera() {
+        // Start analysis (Load Server Stream)
+        async function startAnalysis() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        width: { ideal: 640 }, 
-                        height: { ideal: 480 },
-                        facingMode: 'user'
-                    } 
+                // Reset state on server first
+                await fetch('/analyze/reset_state/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ exercise: currentExercise })
                 });
-                video.srcObject = stream;
-                await video.play();
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                return true;
+
+                isAnalyzing = true;
+
+                // UI Updates
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-block';
+                statusIndicator.classList.remove('status-inactive');
+                statusIndicator.classList.add('status-active');
+
+                // Swap video for stream
+                video.style.display = 'none';
+                streamImg.src = `/analyze/live_${currentExercise}/?t=${new Date().getTime()}`;
+                streamImg.style.display = 'block';
+
+                feedbackEl.textContent = 'Analysis running...';
+                feedbackEl.style.color = '#00ff88';
+
+                // Restore stats panel visibility (removed override from previous step)
+                statValueEl.className = 'stat-value';
+                statValueEl.textContent = '0';
+
+                // Start polling for stats
+                analysisInterval = setInterval(updateStatus, 200);
+
             } catch (err) {
-                console.error('Camera error:', err);
-                feedbackEl.textContent = '❌ Camera access denied. Please allow camera access.';
+                console.error('Error starting analysis:', err);
+                feedbackEl.textContent = 'Error starting analysis';
                 feedbackEl.style.color = '#ff6b6b';
-                return false;
             }
         }
 
-        // Stop camera
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-        }
+        // Poll for live status
+        async function updateStatus() {
+            if (!isAnalyzing) return;
 
-        // Send frame to server for analysis
-        async function analyzeFrame() {
-            if (!isAnalyzing || !video.videoWidth) return;
+            try {
+                const response = await fetch(`/analyze/get_live_status/?exercise=${currentExercise}`);
+                const data = await response.json();
 
-            // Draw video frame to canvas (flip it back to normal for server)
-            ctx.save();
-            ctx.scale(-1, 1);
-            ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-            ctx.restore();
+                if (data.status === 'active') {
+                    // Update stats
+                    if (data.reps !== undefined) {
+                        statValueEl.textContent = data.reps;
+                    } else if (data.duration !== undefined) {
+                        statValueEl.textContent = Math.floor(data.duration);
+                    }
 
-            // Convert canvas to blob
-            canvas.toBlob(async (blob) => {
-                const formData = new FormData();
-                formData.append('frame', blob, 'frame.jpg');
-                formData.append('exercise', currentExercise);
-
-                try {
-                    const response = await fetch('/analyze/live_frame/', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const data = await response.json();
-                    
-                    if (data.error) {
-                        feedbackEl.textContent = data.error;
-                        feedbackEl.style.color = '#ff6b6b';
+                    // Update feedback
+                    // We only update if there is feedback, or maybe clear it if empty?
+                    // The server persists 'ui_feedback' for a few seconds.
+                    if (data.feedback && data.feedback.length > 0) {
+                        feedbackEl.innerHTML = data.feedback.map(f => {
+                            const color = f.includes('✓') || f.includes('Good') || f.includes('Great') || f.includes('Nice') || f.includes('Perfect') ? '#00ff88' : '#00d4ff';
+                            return `<div style="color: ${color}; margin-bottom: 5px;">${f}</div>`;
+                        }).join('');
                     } else {
-                        // Update stats
-                        if (data.reps !== undefined) {
-                            statValueEl.textContent = data.reps;
-                        } else if (data.duration !== undefined) {
-                            statValueEl.textContent = Math.floor(data.duration);
-                        }
-                        
-                        // Update feedback
-                        if (data.feedback && data.feedback.length > 0) {
-                            feedbackEl.innerHTML = data.feedback.map(f => {
-                                const color = f.includes('✓') || f.includes('Good') || f.includes('Great') || f.includes('Nice') ? '#00ff88' : '#00d4ff';
-                                return `<div style="color: ${color}">${f}</div>`;
-                            }).join('');
+                        // Optional: Clear feedback if empty, or keep last message?
+                        // If server clears it, we clear it.
+                        if (data.feedback && data.feedback.length === 0) {
+                            feedbackEl.innerHTML = '<span style="color: #aaa">Analysing form...</span>';
                         }
                     }
-                } catch (err) {
-                    console.error('Analysis error:', err);
                 }
-            }, 'image/jpeg', 0.8);
+            } catch (err) {
+                console.error('Polling error:', err);
+            }
         }
 
-        // Start analysis
-        startBtn.addEventListener('click', async () => {
-            const cameraStarted = await startCamera();
-            if (!cameraStarted) return;
-
-            isAnalyzing = true;
-            startBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-block';
-            statusIndicator.classList.remove('status-inactive');
-            statusIndicator.classList.add('status-active');
-            feedbackEl.textContent = 'Analyzing...';
-            feedbackEl.style.color = '#00ff88';
-
-            // Reset state on server
-            await fetch('/analyze/reset_state/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ exercise: currentExercise })
-            });
-
-            // Analyze frames at ~10 FPS
-            analysisInterval = setInterval(analyzeFrame, 100);
-        });
-
         // Stop analysis
-        stopBtn.addEventListener('click', () => {
+        function stopAnalysis() {
             isAnalyzing = false;
             clearInterval(analysisInterval);
-            stopCamera();
+
+            // Switch back to webcam check if desired, or just placeholder
+            streamImg.src = "";
+            streamImg.style.display = 'none';
+            // video.style.display = 'block'; // Keep hidden for clean look or show placeholder
+            video.style.opacity = 0.5; // Dim placeholder/video
+            video.style.display = 'block';
+
             startBtn.style.display = 'inline-block';
             stopBtn.style.display = 'none';
             statusIndicator.classList.remove('status-active');
             statusIndicator.classList.add('status-inactive');
             feedbackEl.textContent = 'Analysis stopped';
-        });
+        }
+
+        startBtn.addEventListener('click', startAnalysis);
+        stopBtn.addEventListener('click', stopAnalysis);
+
+        // Camera Preview (Optional - keeps local webcam active for setup if needed, 
+        // but server uses ITS own camera access. 
+        // If server and client are same machine, this might conflict on camera access!)
+        // IMPORTANT: If we use server-side streaming, the SERVER opens the camera.
+        // If the browser ALSO tries to open the camera (getUserMedia), it might fail or block the server.
+        // So we should NOT call getUserMedia here if the server needs the camera.
+        // I will REMOVE local camera logic to avoid conflict.
+
+        video.poster = "https://via.placeholder.com/640x480?text=Camera+Preview";
+
 
         // Video upload handler
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const resultDiv = document.getElementById('uploadResult');
-            
+
             resultDiv.style.display = 'block';
             resultDiv.style.background = 'rgba(0,212,255,0.1)';
             resultDiv.innerHTML = '⏳ Analyzing video...';
@@ -426,17 +475,34 @@
                     body: formData
                 });
                 const data = await response.json();
-                
+
                 if (data.error) {
                     resultDiv.style.background = 'rgba(255,107,107,0.2)';
                     resultDiv.innerHTML = `❌ ${data.error}`;
                 } else {
                     resultDiv.style.background = 'rgba(0,255,136,0.2)';
+
+                    let resultHTML = '✅ Analysis complete!';
+
                     if (data.reps !== undefined) {
-                        resultDiv.innerHTML = `✅ Analysis complete! <strong>${data.reps} reps</strong> detected.`;
-                    } else if (data.duration_seconds !== undefined) {
-                        resultDiv.innerHTML = `✅ Analysis complete! Duration: <strong>${data.duration_seconds} seconds</strong>`;
+                        resultHTML += ` <strong>${data.reps} reps</strong>`;
                     }
+                    if (data.duration_seconds !== undefined) {
+                        resultHTML += ` <strong>${data.duration_seconds}s</strong>`;
+                    }
+
+                    // Show form summary if available
+                    if (data.form_summary) {
+                        const s = data.form_summary;
+                        resultHTML += `<br><br>
+                         <div style="text-align: left; font-size: 0.9em;">
+                             <div>Accuracy: <strong>${s.accuracy_percentage}%</strong></div>
+                             ${s.average_depth_score !== undefined ? `<div>Depth Score: <strong>${s.average_depth_score}/3</strong></div>` : ''}
+                             <div style="margin-top:5px; color:#fff;">${s.overall_feedback}</div>
+                         </div>`;
+                    }
+
+                    resultDiv.innerHTML = resultHTML;
                 }
             } catch (err) {
                 resultDiv.style.background = 'rgba(255,107,107,0.2)';
@@ -445,4 +511,5 @@
         });
     </script>
 </body>
+
 </html>
