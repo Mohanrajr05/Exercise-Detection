@@ -1,12 +1,31 @@
 # Django & Python
-*.pyc
 __pycache__/
+*.py[cod]
+*$py.class
 *.log
+local_settings.py
 db.sqlite3
+db.sqlite3-journal
 .env
-.venv/
+.venv
+env/
+venv/
+ENV/
 
-# Training & video data
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Training & dataset folders
 PlankDataset/
 SitupDataset/
 PushupDataset/
@@ -18,5 +37,15 @@ LungesDataset/
 uploaded_videos/
 training.log
 
-# Old model format (keep .keras files, exclude .h5 to save space)
+# Models (Keep .keras, ignore heavy/old formats)
 *.h5
+*.tflite
+*.onnx
+
+# Frontend dependencies and builds
+**/node_modules/
+**/dist/
+**/build/
+.next/
+out/
+.vercel

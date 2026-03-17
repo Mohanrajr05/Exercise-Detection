@@ -26,5 +26,12 @@ urlpatterns = [
     path('analyze/analyze_jumping_jacks/', views.upload_and_analyze_jumping_jacks, name='upload_jumping_jacks'),
     path('analyze/analyze_reverse_plank/', views.upload_and_analyze_reverse_plank, name='upload_reverse_plank'),
     path('analyze/analyze_side_plank/', views.upload_and_analyze_side_plank, name='upload_side_plank'),
+
     path('analyze/analyze_bicep_curl/', views.upload_and_analyze_bicep_curl, name='analyze_bicep_curl'),
+
+    # New DRF API Endpoints
+    path('api/sessions/', views.WorkoutSessionViewSet.as_view({'get': 'list', 'post': 'create'}), name='session-list'),
+    path('api/sessions/<int:pk>/', views.WorkoutSessionViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='session-detail'),
+    path('api/analytics/summary/', views.analytics_summary, name='analytics-summary'),
+
 ]

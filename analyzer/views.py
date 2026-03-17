@@ -11,9 +11,20 @@ from django.views.decorators.csrf import csrf_exempt
 from django.core.files.storage import FileSystemStorage
 from django.shortcuts import render
 
+
 # Import MediaPipe Tasks API
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+
+from rest_framework import viewsets
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from .models import WorkoutSession
+from .serializers import WorkoutSessionSerializer
+from mediapipe.python.solutions import pose as mp_pose
+from mediapipe.python.solutions.drawing_utils import draw_landmarks
+from mediapipe.python.solutions.drawing_styles import get_default_pose_landmarks_style
+
 
 # --- GLOBAL CONFIGURATION ---
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
@@ -1278,6 +1289,7 @@ def analyze_live_frame(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @csrf_exempt
 def live_bicep_curl(request):
     """API endpoint for live Bicep Curl feed."""
@@ -1304,3 +1316,41 @@ def upload_and_analyze_bicep_curl(request):
         
         return JsonResponse(result)
     return JsonResponse({'error': 'Invalid request'}, status=400)
+
+# --- DRF API VIEWS FOR REACT FRONTEND ---
+class WorkoutSessionViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows workout sessions to be viewed or edited.
+    """
+    queryset = WorkoutSession.objects.all().order_by('-date')
+    serializer_class = WorkoutSessionSerializer
+
+@api_view(['GET'])
+def analytics_summary(request):
+    """
+    API endpoint to get summary statistics across all workouts.
+    """
+    from django.db.models import Sum, Avg, Count
+    
+    total_workouts = WorkoutSession.objects.count()
+    if total_workouts == 0:
+        return Response({
+            'total_workouts': 0,
+            'total_reps': 0,
+            'total_duration': 0,
+            'average_accuracy': 0
+        })
+        
+    stats = WorkoutSession.objects.aggregate(
+        total_reps=Sum('reps'),
+        total_duration=Sum('duration_seconds'),
+        average_accuracy=Avg('accuracy_score')
+    )
+    
+    return Response({
+        'total_workouts': total_workouts,
+        'total_reps': stats['total_reps'] or 0,
+        'total_duration': round(stats['total_duration'] or 0, 1),
+        'average_accuracy': round(stats['average_accuracy'] or 0, 1)
+    })
+
