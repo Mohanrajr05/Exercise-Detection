@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Roboto', -apple-system, sans-serif;
+  --font-display: 'Montserrat', sans-serif;
+
+  /* High Energy Neon Accent */
+  --color-primary-50: #f7fee7;
+  --color-primary-100: #ecfccb;
+  --color-primary-500: #84cc16;
+  /* Lime base */
+  --color-primary-600: #65a30d;
+  --color-primary-900: #365314;
+
+  /* Deep Black/Graphite background */
+  --color-dark-800: #18181b;
+  /* Zinc 900 */
+  --color-dark-900: #09090b;
+  /* Zinc 950 */
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-dark-900);
+  color: #f4f4f5;
+  /* Zinc 100 base */
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.display-font {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-zinc-900/60 backdrop-blur-xl border border-white/5 shadow-2xl rounded-2xl;
+  }
+}
