@@ -4,7 +4,6 @@ import Layout from './components/layout/Layout';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import WorkoutLive from './pages/WorkoutLive';
-import Settings from './pages/Settings';
 
 function App() {
   return (
@@ -14,7 +13,6 @@ function App() {
           <Route index element={<Home />} />
           <Route path="workout" element={<WorkoutLive />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="settings" element={<Settings />} />
         </Route>
 
       </Routes>

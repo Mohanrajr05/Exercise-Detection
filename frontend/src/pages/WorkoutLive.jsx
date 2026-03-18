@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import api from '../services/api';
 import { Camera, Activity, Volume2, Settings2, ShieldAlert, CheckCircle2 } from 'lucide-react';
@@ -6,20 +7,33 @@ import { Camera, Activity, Volume2, Settings2, ShieldAlert, CheckCircle2 } from 
 const EXERCISES = [
     { id: 'pushup', name: 'Push-ups' },
     { id: 'squat', name: 'Squats' },
-    { id: 'plank', name: 'Plank' },
     { id: 'jumping_jacks', name: 'Jumping Jacks' },
-    { id: 'situp', name: 'Sit-ups' }
+    { id: 'situp', name: 'Sit-ups' },
+    { id: 'bicep_curl', name: 'Bicep Curl' },
+    { id: 'plank', name: 'Core Plank' },
+    { id: 'reverse_plank', name: 'Reverse Plank' },
+    { id: 'side_plank', name: 'Side Plank' },
 ];
 
 const WorkoutLive = () => {
+    const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    const initialExercise = queryParams.get('exercise') || 'pushup';
+
     const webcamRef = useRef(null);
     const [isTracking, setIsTracking] = useState(false);
-    const [selectedExercise, setSelectedExercise] = useState('pushup');
+    const [selectedExercise, setSelectedExercise] = useState(initialExercise);
     const [stats, setStats] = useState({ reps: 0, duration: 0, feedback: [] });
     const [fps, setFps] = useState(0);
     const requestRef = useRef();
     const lastFrameTime = useRef(performance.now());
     const frameCount = useRef(0);
+    const isTrackingRef = useRef(isTracking);
+
+    // Sync ref for closure-safe checks during asynchronous operations
+    useEffect(() => {
+        isTrackingRef.current = isTracking;
+    }, [isTracking]);
 
     // Voice Synthesis
     const speakFeedback = useCallback((text) => {
@@ -53,8 +67,11 @@ const WorkoutLive = () => {
                     const latestFeedback = response.data.feedback?.[response.data.feedback.length - 1];
                     const prevLatestFeedback = prev.feedback?.[prev.feedback.length - 1];
 
+                    // Safely intercept TTS generation here, checking if the session was killed while the network request was traversing!
                     if (latestFeedback && latestFeedback !== prevLatestFeedback) {
-                        speakFeedback(latestFeedback);
+                        if (isTrackingRef.current) {
+                            speakFeedback(latestFeedback);
+                        }
                     }
 
                     return newStats;
@@ -98,6 +115,20 @@ const WorkoutLive = () => {
         setIsTracking(!isTracking);
         if (!isTracking) {
             setStats({ reps: 0, duration: 0, feedback: [] });
+        } else {
+            // Stopping session: Save results to SQLite database
+            if (stats.reps > 0 || stats.duration > 0) {
+                api.post('/api/sessions/', {
+                    exercise_type: selectedExercise,
+                    reps: stats.reps || 0,
+                    duration_seconds: stats.duration || 0,
+                    accuracy_score: 100.0 // Fixed at 100% until form scoring is fully integrated
+                }).catch(err => console.error("Failed to save session history:", err));
+            }
+            
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
         }
     };
 
@@ -133,8 +164,8 @@ const WorkoutLive = () => {
                     <button
                         onClick={handleToggleTracking}
                         className={`px-6 py-2.5 rounded-xl font-bold text-white shadow-sm transition-all focus:ring-2 focus:ring-offset-2 ${isTracking
-                                ? 'bg-rose-500 hover:bg-rose-600 focus:ring-rose-500 shadow-rose-500/30'
-                                : 'bg-slate-900 hover:bg-slate-800 focus:ring-slate-900 shadow-slate-900/30'
+                            ? 'bg-rose-500 hover:bg-rose-600 focus:ring-rose-500 shadow-rose-500/30'
+                            : 'bg-slate-900 hover:bg-slate-800 focus:ring-slate-900 shadow-slate-900/30'
                             }`}
                     >
                         {isTracking ? 'End Session' : 'Start Camera'}
@@ -202,15 +233,15 @@ const WorkoutLive = () => {
                     {/* Primary Metric Wrapper */}
                     <div className="text-center mb-8 relative z-10">
                         <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mb-2">
-                            {['plank', 'side_plank'].includes(selectedExercise) ? 'Time Active' : 'Repetitions'}
+                            {['plank', 'side_plank', 'reverse_plank'].includes(selectedExercise) ? 'Time Active' : 'Repetitions'}
                         </h4>
                         <div className="relative inline-block">
                             <div className="text-[5rem] leading-none font-black text-slate-800 tracking-tighter tabular-nums drop-shadow-sm">
-                                {['plank', 'side_plank'].includes(selectedExercise)
+                                {['plank', 'side_plank', 'reverse_plank'].includes(selectedExercise)
                                     ? `${stats.duration || 0}`
                                     : stats.reps || 0}
                             </div>
-                            {['plank', 'side_plank'].includes(selectedExercise) && (
+                            {['plank', 'side_plank', 'reverse_plank'].includes(selectedExercise) && (
                                 <span className="absolute bottom-2 -right-4 text-xl font-bold text-slate-400">s</span>
                             )}
                         </div>
@@ -229,8 +260,8 @@ const WorkoutLive = () => {
                                     const isPositive = msg.includes("✓") || msg.toLowerCase().includes("good") || msg.toLowerCase().includes("great");
                                     return (
                                         <div key={i} className={`flex items-start p-3 rounded-xl border text-sm transition-all animate-in fade-in slide-in-from-right-2 ${isPositive
-                                                ? "bg-emerald-50/50 text-emerald-800 border-emerald-100"
-                                                : "bg-rose-50/50 text-rose-800 border-rose-100"
+                                            ? "bg-emerald-50/50 text-emerald-800 border-emerald-100"
+                                            : "bg-rose-50/50 text-rose-800 border-rose-100"
                                             }`}>
                                             {isPositive ? <CheckCircle2 className="w-4 h-4 mr-2 mt-0.5 text-emerald-500 shrink-0" /> : <ShieldAlert className="w-4 h-4 mr-2 mt-0.5 text-rose-500 shrink-0" />}
                                             <span className="font-medium leading-tight">{msg}</span>

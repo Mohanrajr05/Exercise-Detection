@@ -16,7 +16,7 @@ const itemVariants = {
     show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
 };
 
-const ExerciseCard = ({ title, description, badge, link, svgPath, colorClass }) => (
+const ExerciseCard = ({ title, description, badge, exerciseId, svgPath, colorClass }) => (
     <motion.div
         variants={itemVariants}
         whileHover={{ y: -5, scale: 1.02 }}
@@ -40,7 +40,7 @@ const ExerciseCard = ({ title, description, badge, link, svgPath, colorClass }) 
             <h3 className="text-2xl font-black text-white mb-2 display-font uppercase italic">{title}</h3>
             <p className="text-zinc-500 text-sm mb-8 flex-1 leading-relaxed font-medium">{description}</p>
 
-            <Link to={link || "/workout"} className="group/btn relative inline-flex items-center justify-center w-full px-5 py-3 text-sm font-bold uppercase tracking-wider rounded-xl text-black bg-zinc-100 overflow-hidden">
+            <Link to={exerciseId ? `/workout?exercise=${exerciseId}` : "/workout"} className="group/btn relative inline-flex items-center justify-center w-full px-5 py-3 text-sm font-bold uppercase tracking-wider rounded-xl text-black bg-zinc-100 overflow-hidden">
                 <div className="absolute inset-0 w-0 bg-primary-500 transition-all duration-[250ms] ease-out group-hover/btn:w-full"></div>
                 <span className="relative flex items-center text-zinc-900">
                     <Play className="w-5 h-5 mr-2" fill="currentColor" />
@@ -128,6 +128,7 @@ const Home = () => {
                         title="Push-ups"
                         description="Track elbow angle, body alignment, and count reps automatically."
                         badge="Upper Body"
+                        exerciseId="pushup"
                         colorClass="from-blue-600/20 to-transparent"
                         svgPath="M13 10V3L4 14h7v7l9-11h-7z"
                     />
@@ -135,20 +136,15 @@ const Home = () => {
                         title="Squats"
                         description="Monitor knee tracking and hip depth for perfect lower body form."
                         badge="Lower Body"
+                        exerciseId="squat"
                         colorClass="from-primary-600/20 to-transparent"
                         svgPath="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                    />
-                    <ExerciseCard
-                        title="Core Plank"
-                        description="Real-time posture checking to ensure your back is perfectly straight."
-                        badge="Core"
-                        colorClass="from-emerald-600/20 to-transparent"
-                        svgPath="M4 6h16M4 12h16m-7 6h7"
                     />
                     <ExerciseCard
                         title="Jumping Jacks"
                         description="Full body cardiovascular tracking evaluating arm and leg extensions."
                         badge="Cardio"
+                        exerciseId="jumping_jacks"
                         colorClass="from-orange-500/20 to-transparent"
                         svgPath="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
@@ -156,8 +152,41 @@ const Home = () => {
                         title="Sit-ups"
                         description="Track your core contraction angles effortlessly."
                         badge="Core"
+                        exerciseId="situp"
                         colorClass="from-rose-500/20 to-transparent"
                         svgPath="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                    <ExerciseCard
+                        title="Bicep Curl"
+                        description="Measure elbow flexion angles and track arm strength reps precisely."
+                        badge="Upper Body"
+                        exerciseId="bicep_curl"
+                        colorClass="from-violet-500/20 to-transparent"
+                        svgPath="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                    />
+                    <ExerciseCard
+                        title="Core Plank"
+                        description="Real-time posture checking to ensure your back is perfectly straight."
+                        badge="Core"
+                        exerciseId="plank"
+                        colorClass="from-emerald-600/20 to-transparent"
+                        svgPath="M4 6h16M4 12h16m-7 6h7"
+                    />
+                    <ExerciseCard
+                        title="Reverse Plank"
+                        description="Hold a reverse body bridge and track posterior chain endurance."
+                        badge="Core"
+                        exerciseId="reverse_plank"
+                        colorClass="from-cyan-500/20 to-transparent"
+                        svgPath="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4"
+                    />
+                    <ExerciseCard
+                        title="Side Plank"
+                        description="Test lateral core stability with real-time body alignment feedback."
+                        badge="Core"
+                        exerciseId="side_plank"
+                        colorClass="from-amber-500/20 to-transparent"
+                        svgPath="M4 6h16M4 10h16M4 14h16M4 18h16"
                     />
                 </motion.div>
             </div>

@@ -33,5 +33,10 @@ urlpatterns = [
     path('api/sessions/', views.WorkoutSessionViewSet.as_view({'get': 'list', 'post': 'create'}), name='session-list'),
     path('api/sessions/<int:pk>/', views.WorkoutSessionViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='session-detail'),
     path('api/analytics/summary/', views.analytics_summary, name='analytics-summary'),
+    path('api/analytics/volume/', views.volume_trend, name='volume-trend'),
+    path('api/analytics/export/csv/', views.export_csv, name='export-csv'),
+    path('api/analytics/export/pdf/', views.export_pdf, name='export-pdf'),
+    path('api/profile/', views.profile_detail, name='profile-detail'),
+
 
 ]

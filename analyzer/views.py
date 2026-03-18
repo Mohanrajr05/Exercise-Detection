@@ -19,11 +19,9 @@ from mediapipe.tasks.python import vision
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-from .models import WorkoutSession
-from .serializers import WorkoutSessionSerializer
-from mediapipe.python.solutions import pose as mp_pose
-from mediapipe.python.solutions.drawing_utils import draw_landmarks
-from mediapipe.python.solutions.drawing_styles import get_default_pose_landmarks_style
+from django.db.models import Sum, Avg
+from .models import WorkoutSession, UserProfile
+from .serializers import WorkoutSessionSerializer, UserProfileSerializer
 
 
 # --- GLOBAL CONFIGURATION ---
@@ -284,6 +282,8 @@ def update_pushup_state(landmarks, state):
         state['current_rep_min_angle'] = 180  # Track lowest angle in current rep
     if 'current_rep_issues' not in state:
         state['current_rep_issues'] = []  # Issues detected during current rep
+    if 'feedback_cooldowns' not in state:
+        state['feedback_cooldowns'] = {}  # Cooldown timers for voice feedback
     
     try:
         # Get landmarks from both sides
@@ -298,18 +298,22 @@ def update_pushup_state(landmarks, state):
         right_wrist = get_landmark(landmarks, PoseLandmark.RIGHT_WRIST)
         right_hip = get_landmark(landmarks, PoseLandmark.RIGHT_HIP)
         
+        def get_vis(lm):
+            v = getattr(lm, 'visibility', 0.0)
+            return v if v is not None else 0.0
+            
         # Calculate visibility scores
         left_vis = sum([
-            getattr(left_shoulder, 'visibility', 0) or 0,
-            getattr(left_elbow, 'visibility', 0) or 0,
-            getattr(left_wrist, 'visibility', 0) or 0,
-            getattr(left_hip, 'visibility', 0) or 0
+            get_vis(left_shoulder),
+            get_vis(left_elbow),
+            get_vis(left_wrist),
+            get_vis(left_hip)
         ])
         right_vis = sum([
-            getattr(right_shoulder, 'visibility', 0) or 0,
-            getattr(right_elbow, 'visibility', 0) or 0,
-            getattr(right_wrist, 'visibility', 0) or 0,
-            getattr(right_hip, 'visibility', 0) or 0
+            get_vis(right_shoulder),
+            get_vis(right_elbow),
+            get_vis(right_wrist),
+            get_vis(right_hip)
         ])
         
         # Use the more visible side
@@ -320,12 +324,12 @@ def update_pushup_state(landmarks, state):
         
         # Check minimum visibility
         min_vis = min(
-            getattr(shoulder, 'visibility', 1) or 1,
-            getattr(elbow, 'visibility', 1) or 1,
-            getattr(wrist, 'visibility', 1) or 1
+            get_vis(shoulder),
+            get_vis(elbow),
+            get_vis(wrist)
         )
-        if min_vis < 0.1:
-            state['feedback'].append("Ensure body is visible")
+        if min_vis < 0.5:
+            state['feedback'].append("Full body not visible")
             return state
         
         shoulder_coords = [shoulder.x, shoulder.y]
@@ -342,6 +346,12 @@ def update_pushup_state(landmarks, state):
         if state.get('is_down', False) or elbow_angle < 130:
             state['current_rep_min_angle'] = min(state['current_rep_min_angle'], elbow_angle)
         
+        def push_debounced_feedback(msg, cooldown=3.0):
+            now = time.time()
+            if now - state['feedback_cooldowns'].get(msg, 0) > cooldown:
+                state['feedback'].append(msg)
+                state['feedback_cooldowns'][msg] = now
+        
         # === FORM CHECKS (during the rep) ===
         
         # Check 1: Body alignment (hip sagging or piking)
@@ -352,9 +362,11 @@ def update_pushup_state(landmarks, state):
             if body_angle < 150:
                 if "Hip sagging" not in state['current_rep_issues']:
                     state['current_rep_issues'].append("Hip sagging")
+                push_debounced_feedback("raise hips")
             elif body_angle > 200:
                 if "Hips too high" not in state['current_rep_issues']:
                     state['current_rep_issues'].append("Hips too high")
+                push_debounced_feedback("lower hips")
         except:
             pass
         
@@ -379,60 +391,69 @@ def update_pushup_state(landmarks, state):
         PERFECT_DEPTH = 90
         GOOD_DEPTH = 100
         
-        if elbow_angle < DOWN_THRESHOLD:
-            state['frame_count_down'] += 1
-            state['frame_count_up'] = 0
-            if state['frame_count_down'] >= FRAMES_REQUIRED and not state['is_down']:
-                state['is_down'] = True
+        if not state['is_down']:
+            if elbow_angle < DOWN_THRESHOLD:
+                state['frame_count_down'] += 1
+                state['frame_count_up'] = 0
+                if state['frame_count_down'] >= FRAMES_REQUIRED:
+                    state['is_down'] = True
+                    state['frame_count_down'] = 0
+            else:
+                if 110 <= elbow_angle <= 140:
+                    push_debounced_feedback("go lower")
+                # Don't throw noisy angles
                 
-        elif elbow_angle > UP_THRESHOLD:
-            state['frame_count_up'] += 1
-            state['frame_count_down'] = 0
-            
-            if state['frame_count_up'] >= FRAMES_REQUIRED and state['is_down']:
-                # Rep completed - evaluate form
-                state['count'] += 1
-                rep_num = state['count']
-                min_angle = state['current_rep_min_angle']
+        else: # state['is_down'] is True
+            if elbow_angle > UP_THRESHOLD:
+                state['frame_count_up'] += 1
+                state['frame_count_down'] = 0
                 
-                # Determine depth rating
-                if min_angle <= PERFECT_DEPTH:
-                    depth_rating = "Excellent depth"
-                    depth_score = 3
-                elif min_angle <= GOOD_DEPTH:
-                    depth_rating = "Good depth"
-                    depth_score = 2
-                elif min_angle <= DOWN_THRESHOLD:
-                    depth_rating = "Shallow - go deeper"
-                    depth_score = 1
-                else:
-                    depth_rating = "Incomplete rep"
-                    depth_score = 0
-                
-                # Compile rep feedback
-                rep_feedback = {
-                    'rep_number': rep_num,
-                    'min_angle': round(min_angle, 1),
-                    'depth_rating': depth_rating,
-                    'depth_score': depth_score,  # 0-3 scale
-                    'form_issues': state['current_rep_issues'].copy() if state['current_rep_issues'] else ["Good form"],
-                    'is_correct': depth_score >= 2 and len(state['current_rep_issues']) == 0
-                }
-                state['rep_details'].append(rep_feedback)
-                
-                # Reset for next rep
-                state['is_down'] = False
-                state['current_rep_min_angle'] = 180
-                state['current_rep_issues'] = []
-                
-                # Provide immediate feedback
-                if rep_feedback['is_correct']:
-                    state['feedback'].append(f"Rep #{rep_num}: Perfect! ✓")
-                else:
-                    issues = ", ".join(rep_feedback['form_issues'][:2])
-                    state['feedback'].append(f"Rep #{rep_num}: {depth_rating}. {issues}")
-        else:
-            state['feedback'].append(f"Angle: {int(elbow_angle)}°")
+                if state['frame_count_up'] >= FRAMES_REQUIRED:
+                    # Rep completed - evaluate form
+                    state['count'] += 1
+                    rep_num = state['count']
+                    min_angle = state['current_rep_min_angle']
+                    
+                    # Determine depth rating
+                    if min_angle <= PERFECT_DEPTH:
+                        depth_rating = "Excellent depth"
+                        depth_score = 3
+                    elif min_angle <= GOOD_DEPTH:
+                        depth_rating = "Good depth"
+                        depth_score = 2
+                    elif min_angle <= DOWN_THRESHOLD:
+                        depth_rating = "Shallow - go deeper"
+                        depth_score = 1
+                    else:
+                        depth_rating = "Incomplete rep"
+                        depth_score = 0
+                    
+                    # Compile rep feedback
+                    rep_feedback = {
+                        'rep_number': rep_num,
+                        'min_angle': round(min_angle, 1),
+                        'depth_rating': depth_rating,
+                        'depth_score': depth_score,  # 0-3 scale
+                        'form_issues': state['current_rep_issues'].copy() if state['current_rep_issues'] else ["Good form"],
+                        'is_correct': depth_score >= 2 and len(state['current_rep_issues']) == 0
+                    }
+                    state['rep_details'].append(rep_feedback)
+                    
+                    # Reset for next rep
+                    state['is_down'] = False
+                    state['current_rep_min_angle'] = 180
+                    state['current_rep_issues'] = []
+                    state['frame_count_up'] = 0
+                    
+                    # Provide immediate feedback
+                    if rep_feedback['is_correct']:
+                        state['feedback'].append(f"Rep #{rep_num}: Good rep")
+                    else:
+                        issues = ", ".join(rep_feedback['form_issues'][:2])
+                        state['feedback'].append(f"Rep #{rep_num}: {depth_rating}. {issues}")
+            else:
+                # Still down / in the middle
+                pass
 
     except (IndexError, AttributeError) as e:
         state['feedback'].append("Position not detected")
@@ -443,40 +464,114 @@ def update_pushup_state(landmarks, state):
 def update_plank_state(landmarks, state, is_reverse=False, is_side=False):
     state['feedback'] = []
     
-    required = [
-        PoseLandmark.LEFT_SHOULDER,
-        PoseLandmark.LEFT_HIP,
-        PoseLandmark.LEFT_ANKLE
-    ]
-    
-    # Initialize time tracking if not present
+    # Initialize time/feedback tracking if not present
     if 'cumulative_time' not in state:
         state['cumulative_time'] = 0.0
         state['start_time'] = None
         state['duration'] = 0.0
+        state['plank_bad_frames'] = 0
+    if 'feedback_cooldowns' not in state:
+        state['feedback_cooldowns'] = {}
         
+    def push_debounced_feedback(msg, cooldown=3.0):
+        now = time.time()
+        if now - state['feedback_cooldowns'].get(msg, 0) > cooldown:
+            state['feedback'].append(msg)
+            state['feedback_cooldowns'][msg] = now
+            
     try:
-        # Check if full body is visible
-        if not landmarks_visible(landmarks, required):
-            state['feedback'].append("Ensure full body is visible")
+        # Get landmarks from both sides
+        left_shoulder = get_landmark(landmarks, PoseLandmark.LEFT_SHOULDER)
+        left_hip = get_landmark(landmarks, PoseLandmark.LEFT_HIP)
+        left_knee = get_landmark(landmarks, PoseLandmark.LEFT_KNEE)
+        left_ankle = get_landmark(landmarks, PoseLandmark.LEFT_ANKLE)
+        left_heel = get_landmark(landmarks, PoseLandmark.LEFT_HEEL)
+        left_toe = get_landmark(landmarks, PoseLandmark.LEFT_FOOT_INDEX)
+        
+        right_shoulder = get_landmark(landmarks, PoseLandmark.RIGHT_SHOULDER)
+        right_hip = get_landmark(landmarks, PoseLandmark.RIGHT_HIP)
+        right_knee = get_landmark(landmarks, PoseLandmark.RIGHT_KNEE)
+        right_ankle = get_landmark(landmarks, PoseLandmark.RIGHT_ANKLE)
+        right_heel = get_landmark(landmarks, PoseLandmark.RIGHT_HEEL)
+        right_toe = get_landmark(landmarks, PoseLandmark.RIGHT_FOOT_INDEX)
+        
+        def get_vis(lm):
+            v = getattr(lm, 'visibility', 0.0)
+            return v if v is not None else 0.0
+            
+        # Calculate visibility scores
+        left_vis = sum([get_vis(left_shoulder), get_vis(left_hip), get_vis(left_knee), get_vis(left_ankle)])
+        right_vis = sum([get_vis(right_shoulder), get_vis(right_hip), get_vis(right_knee), get_vis(right_ankle)])
+        
+        # Use the more visible side for primary angles
+        if left_vis >= right_vis:
+            shoulder, hip, knee, ankle = left_shoulder, left_hip, left_knee, left_ankle
+            heel, toe = left_heel, left_toe
+        else:
+            shoulder, hip, knee, ankle = right_shoulder, right_hip, right_knee, right_ankle
+            heel, toe = right_heel, right_toe
+            
+        # Check minimum visibility
+        min_vis = min(
+            get_vis(shoulder),
+            get_vis(hip),
+            get_vis(knee),
+            get_vis(ankle)
+        )
+        if min_vis < 0.5:
+            push_debounced_feedback("Full body not visible", cooldown=4.0)
             # Pause timer if running
             if state['start_time'] is not None:
                 state['cumulative_time'] += time.time() - state['start_time']
                 state['start_time'] = None
             return state
         
-        shoulder = get_landmark(landmarks, PoseLandmark.LEFT_SHOULDER)
-        hip = get_landmark(landmarks, PoseLandmark.LEFT_HIP)
-        ankle = get_landmark(landmarks, PoseLandmark.LEFT_ANKLE)
-        
-        # Check horizontal alignment (Skip for Reverse Plank and Side Plank as arm length varies incline)
-        is_horizontal = is_body_horizontal(landmarks)
-        if not is_reverse and not is_side and not is_horizontal:
-            state['feedback'].append("Get into plank position")
-            if state['start_time'] is not None:
-                state['cumulative_time'] += time.time() - state['start_time']
-                state['start_time'] = None
-            return state
+        # --- Geometric Orientation Locks ---
+        # 1. Side Plank Lock: Shoulders must be stacked vertically
+        shoulder_y_diff = abs(left_shoulder.y - right_shoulder.y)
+        if is_side:
+            if shoulder_y_diff < 0.10: # Shoulders are level (facing floor/ceiling)
+                push_debounced_feedback("Turn sideways")
+                if state['start_time'] is not None:
+                    state['cumulative_time'] += time.time() - state['start_time']
+                    state['start_time'] = None
+                return state
+                
+        # 2. Core vs Reverse Plank Lock: Shoulders must be relatively level
+        else:
+            if shoulder_y_diff > 0.15: # Shoulders are stacked (facing sideways)
+                push_debounced_feedback("Face the floor or ceiling")
+                if state['start_time'] is not None:
+                    state['cumulative_time'] += time.time() - state['start_time']
+                    state['start_time'] = None
+                return state
+                
+            # Check orientation via Heel vs Toe elevation
+            # In Core Plank (facing floor), user is on tip-toes -> heel is higher in air (smaller y)
+            # In Reverse Plank (facing ceiling), user is on heels -> heel is lower to floor (larger y)
+            if is_reverse:
+                if heel.y < toe.y: # Heel is higher than toe -> user is face down
+                    push_debounced_feedback("Flip over to face ceiling")
+                    if state['start_time'] is not None:
+                        state['cumulative_time'] += time.time() - state['start_time']
+                        state['start_time'] = None
+                    return state
+            else: # Core Plank
+                if heel.y > toe.y: # Heel is lower than toe -> user is face up
+                    push_debounced_feedback("Flip over to face floor")
+                    if state['start_time'] is not None:
+                        state['cumulative_time'] += time.time() - state['start_time']
+                        state['start_time'] = None
+                    return state
+                    
+            # Check rough horizontal alignment for Core/Reverse
+            is_horizontal = abs(shoulder.y - hip.y) < 0.25
+            if not is_horizontal:
+                push_debounced_feedback("Get into plank position")
+                if state['start_time'] is not None:
+                    state['cumulative_time'] += time.time() - state['start_time']
+                    state['start_time'] = None
+                return state
         
         body_angle = calculate_angle(
             [shoulder.x, shoulder.y],
@@ -495,9 +590,21 @@ def update_plank_state(landmarks, state, is_reverse=False, is_side=False):
             angle_valid = 150 < body_angle < 210
         else:
             angle_valid = 160 < body_angle < 200 # Standard plank usually ~180
+            
+        knee_angle = calculate_angle(
+            [hip.x, hip.y],
+            [knee.x, knee.y],
+            [ankle.x, ankle.y]
+        )
         
         if angle_valid:
-            state['feedback'].append("Perfect Form! Holding... ⏱️")
+            if knee_angle < 150:
+                state['plank_bad_frames'] += 1
+                if state['plank_bad_frames'] >= 10:
+                    push_debounced_feedback("lift knees")
+            else:
+                state['plank_bad_frames'] = 0
+                push_debounced_feedback("good form", cooldown=5.0)
             
             # Duration calculation depends on mode (Live vs Upload)
             if 'time_per_frame' in state:
@@ -518,13 +625,14 @@ def update_plank_state(landmarks, state, is_reverse=False, is_side=False):
                 state['cumulative_time'] += time.time() - state['start_time']
                 state['start_time'] = None
             
-            # Feedback
-            # Feedback
-            position = check_hip_vertical_position(shoulder, hip, ankle)
-            if position == 'low':
-                state['feedback'].append("Raise your hips!")
-            else:
-                 state['feedback'].append("Lower your hips!")
+            # Feedback with hysteresis to prevent noise
+            state['plank_bad_frames'] += 1
+            if state['plank_bad_frames'] >= 10:
+                position = check_hip_vertical_position(shoulder, hip, ankle)
+                if position == 'low':
+                    push_debounced_feedback("raise hips")
+                else:
+                     push_debounced_feedback("lower hips")
                 
     except (IndexError, AttributeError):
         if 'time_per_frame' not in state and state['start_time'] is not None:
@@ -532,28 +640,53 @@ def update_plank_state(landmarks, state, is_reverse=False, is_side=False):
             state['start_time'] = None
     
     return state
-    
-    return state
 
 
 def update_squat_state(landmarks, state):
     state['feedback'] = []
     
-    required = [
-        PoseLandmark.LEFT_HIP,
-        PoseLandmark.LEFT_KNEE,
-        PoseLandmark.LEFT_ANKLE,
-        PoseLandmark.LEFT_SHOULDER
-    ]
-    
-    try:
-        if not landmarks_visible(landmarks, required):
-            state['feedback'].append("Ensure full body is visible")
-            return state
+    # Initialize rep tracking if not present
+    if 'rep_details' not in state:
+        state['rep_details'] = []
+    if 'feedback_cooldowns' not in state:
+        state['feedback_cooldowns'] = {}
         
-        hip = get_landmark(landmarks, PoseLandmark.LEFT_HIP)
-        knee = get_landmark(landmarks, PoseLandmark.LEFT_KNEE)
-        ankle = get_landmark(landmarks, PoseLandmark.LEFT_ANKLE)
+    try:
+        # Get landmarks from both sides
+        left_shoulder = get_landmark(landmarks, PoseLandmark.LEFT_SHOULDER)
+        left_hip = get_landmark(landmarks, PoseLandmark.LEFT_HIP)
+        left_knee = get_landmark(landmarks, PoseLandmark.LEFT_KNEE)
+        left_ankle = get_landmark(landmarks, PoseLandmark.LEFT_ANKLE)
+        
+        right_shoulder = get_landmark(landmarks, PoseLandmark.RIGHT_SHOULDER)
+        right_hip = get_landmark(landmarks, PoseLandmark.RIGHT_HIP)
+        right_knee = get_landmark(landmarks, PoseLandmark.RIGHT_KNEE)
+        right_ankle = get_landmark(landmarks, PoseLandmark.RIGHT_ANKLE)
+        
+        def get_vis(lm):
+            v = getattr(lm, 'visibility', 0.0)
+            return v if v is not None else 0.0
+            
+        # Calculate visibility scores
+        left_vis = sum([get_vis(left_shoulder), get_vis(left_hip), get_vis(left_knee), get_vis(left_ankle)])
+        right_vis = sum([get_vis(right_shoulder), get_vis(right_hip), get_vis(right_knee), get_vis(right_ankle)])
+        
+        # Use the more visible side
+        if left_vis >= right_vis:
+            shoulder, hip, knee, ankle = left_shoulder, left_hip, left_knee, left_ankle
+        else:
+            shoulder, hip, knee, ankle = right_shoulder, right_hip, right_knee, right_ankle
+            
+        # Check minimum visibility
+        min_vis = min(
+            get_vis(shoulder),
+            get_vis(hip),
+            get_vis(knee),
+            get_vis(ankle)
+        )
+        if min_vis < 0.5:
+            state['feedback'].append("Full body not visible")
+            return state
         
         if not is_body_vertical(landmarks):
             state['feedback'].append("Stand upright to begin")
@@ -565,30 +698,47 @@ def update_squat_state(landmarks, state):
             [ankle.x, ankle.y]
         )
         
+        def push_debounced_feedback(msg, cooldown=3.0):
+            now = time.time()
+            if now - state['feedback_cooldowns'].get(msg, 0) > cooldown:
+                state['feedback'].append(msg)
+                state['feedback_cooldowns'][msg] = now
+                
         if 'frame_count_down' not in state:
             state['frame_count_down'] = 0
             state['frame_count_up'] = 0
+            state['is_down'] = False # Default state is standing up
+            
+        # Adjusted threshold for average user functional squat depth (lenient for demo)
+        DOWN_THRESHOLD = 140
+        UP_THRESHOLD = 160
+        FRAMES_REQUIRED = 3
         
-        hip_below_knee = hip.y > knee.y
-        
-        if knee_angle < 100 and hip_below_knee:
-            state['frame_count_down'] += 1
-            state['frame_count_up'] = 0
-            if state['frame_count_down'] >= 3 and not state['is_down']:
-                state['is_down'] = True
-                state['feedback'].append("Good depth!")
-        elif knee_angle > 160:
-            state['frame_count_up'] += 1
-            state['frame_count_down'] = 0
-            if state['frame_count_up'] >= 3 and state['is_down']:
-                state['count'] += 1
-                state['is_down'] = False
-                state['feedback'].append("Good Squat!")
-        else:
-            if not state['is_down'] and knee_angle < 140:
-                state['feedback'].append("Go deeper!")
+        if not state['is_down']:
+            if knee_angle < DOWN_THRESHOLD:
+                state['frame_count_down'] += 1
+                state['frame_count_up'] = 0
+                if state['frame_count_down'] >= FRAMES_REQUIRED:
+                    state['is_down'] = True
+                    state['frame_count_down'] = 0
             else:
-                state['feedback'].append(f"Knee angle: {int(knee_angle)}°")
+                if 145 <= knee_angle <= 155:
+                    push_debounced_feedback("go deeper")
+                # Wait for user to squat down
+                
+        else: # state['is_down'] is True
+            if knee_angle > UP_THRESHOLD:
+                state['frame_count_up'] += 1
+                state['frame_count_down'] = 0
+                if state['frame_count_up'] >= FRAMES_REQUIRED:
+                    state['is_down'] = False
+                    state['count'] += 1
+                    state['feedback'].append("Good rep")
+                    state['frame_count_up'] = 0
+            else:
+                if 120 <= knee_angle <= 150:
+                    push_debounced_feedback("stand fully up")
+                # Wait for user to return to standing
 
     except (IndexError, AttributeError):
         state['feedback'].append("Position not detected")
@@ -599,49 +749,98 @@ def update_squat_state(landmarks, state):
 def update_situp_state(landmarks, state):
     state['feedback'] = []
     
-    required = [
-        PoseLandmark.LEFT_SHOULDER,
-        PoseLandmark.LEFT_HIP,
-        PoseLandmark.LEFT_KNEE
-    ]
-    
+    # Initialize rep tracking if not present
+    if 'rep_details' not in state:
+        state['rep_details'] = []
+    if 'feedback_cooldowns' not in state:
+        state['feedback_cooldowns'] = {}
+        
     try:
-        if not landmarks_visible(landmarks, required):
-            state['feedback'].append("Ensure full body is visible")
-            return state
+        # Get landmarks from both sides
+        left_shoulder = get_landmark(landmarks, PoseLandmark.LEFT_SHOULDER)
+        left_hip = get_landmark(landmarks, PoseLandmark.LEFT_HIP)
+        left_knee = get_landmark(landmarks, PoseLandmark.LEFT_KNEE)
         
-        shoulder = get_landmark(landmarks, PoseLandmark.LEFT_SHOULDER)
-        hip = get_landmark(landmarks, PoseLandmark.LEFT_HIP)
-        knee = get_landmark(landmarks, PoseLandmark.LEFT_KNEE)
+        right_shoulder = get_landmark(landmarks, PoseLandmark.RIGHT_SHOULDER)
+        right_hip = get_landmark(landmarks, PoseLandmark.RIGHT_HIP)
+        right_knee = get_landmark(landmarks, PoseLandmark.RIGHT_KNEE)
         
-        hip_angle = calculate_angle(
-            [shoulder.x, shoulder.y],
-            [hip.x, hip.y],
-            [knee.x, knee.y]
-        )
+        def get_vis(lm):
+            v = getattr(lm, 'visibility', 0.0)
+            return v if v is not None else 0.0
+            
+        # Calculate visibility scores
+        left_vis = sum([get_vis(left_shoulder), get_vis(left_hip), get_vis(left_knee)])
+        right_vis = sum([get_vis(right_shoulder), get_vis(right_hip), get_vis(right_knee)])
         
-        if is_body_vertical(landmarks):
-            state['feedback'].append("Lie down on your back")
-            return state
-        
-        if 'frame_count_up' not in state:
-            state['frame_count_up'] = 0
-            state['frame_count_down'] = 0
-        
-        if hip_angle < 90:
-            state['frame_count_up'] += 1
-            state['frame_count_down'] = 0
-            if state['frame_count_up'] >= 3 and not state['is_down']:
-                state['is_down'] = True
-        elif hip_angle > 150:
-            state['frame_count_down'] += 1
-            state['frame_count_up'] = 0
-            if state['frame_count_down'] >= 3 and state['is_down']:
-                state['is_down'] = False
-                state['count'] += 1
-                state['feedback'].append("Nice Rep!")
+        # Use the more visible side
+        if left_vis >= right_vis:
+            shoulder, hip, knee = left_shoulder, left_hip, left_knee
         else:
-            state['feedback'].append(f"Hip angle: {int(hip_angle)}°")
+            shoulder, hip, knee = right_shoulder, right_hip, right_knee
+            
+        # Check minimum visibility
+        min_vis = min(
+            get_vis(shoulder),
+            get_vis(hip),
+            get_vis(knee)
+        )
+        if min_vis < 0.5:
+            state['feedback'].append("Full body not visible")
+            return state
+            
+        def push_debounced_feedback(msg, cooldown=3.0):
+            now = time.time()
+            if now - state['feedback_cooldowns'].get(msg, 0) > cooldown:
+                state['feedback'].append(msg)
+                state['feedback_cooldowns'][msg] = now
+
+        # --- Torso elevation signal ---
+        # When lying flat: shoulder.y ≈ hip.y  → ratio ≈ 0
+        # When sitting up: shoulder.y rises above hip.y → (hip.y - shoulder.y) becomes large positive
+        # MediaPipe Y increases downward, so lying flat: shoulder.y ≈ hip.y
+        # Sitting up: shoulder moves UP → shoulder.y DECREASES, hip stays → diff = hip.y - shoulder.y increases
+        torso_rise = hip.y - shoulder.y  # small when flat, large when upright
+
+        if 'stage' not in state:
+            state['stage'] = 'down'       # 'down' = lying flat  /  'up' = crunched
+            state['rise_buf'] = []
+
+        # Smooth over last 4 frames to handle slow movement
+        state['rise_buf'].append(torso_rise)
+        if len(state['rise_buf']) > 4:
+            state['rise_buf'].pop(0)
+        smooth_rise = sum(state['rise_buf']) / len(state['rise_buf'])
+
+        # Thresholds (relative, camera-agnostic)
+        # UP_THRESHOLD: how far shoulder must rise above hip to register as "up"
+        # Rep completes when the torso drops 60% back down from the peak reached in 'up' stage.
+        UP_THRESHOLD = 0.12   # generous — catches average non-athlete sit-ups
+
+        if state['stage'] == 'down':
+            if smooth_rise >= UP_THRESHOLD:
+                state['stage'] = 'up'
+                state['peak_rise'] = smooth_rise   # record high-water mark
+                push_debounced_feedback("good, now lower slowly", cooldown=2.0)
+            elif smooth_rise >= 0.06:
+                push_debounced_feedback("lift higher")
+
+        else:  # stage == 'up'
+            # Track the highest point reached
+            if smooth_rise > state.get('peak_rise', smooth_rise):
+                state['peak_rise'] = smooth_rise
+
+            # Rep completes when torso has dropped at least 60% back from its peak
+            peak = state.get('peak_rise', UP_THRESHOLD)
+            drop_ratio = (peak - smooth_rise) / peak if peak > 0 else 0
+
+            if drop_ratio >= 0.6:
+                state['stage'] = 'down'
+                state['peak_rise'] = 0
+                state['count'] += 1
+                state['feedback'].append("Good rep")
+            elif drop_ratio >= 0.25:
+                push_debounced_feedback("lower slowly")
 
     except (IndexError, AttributeError):
         state['feedback'].append("Position not detected")
@@ -716,108 +915,108 @@ def update_jumping_jacks_state(landmarks, state):
 
 def update_bicep_curl_state(landmarks, state):
     """
-    Bicep Curl detection logic.
-    Tracks elbow angle for reps.
+    Bicep Curl detection logic with strict visibility and hysteresis gating.
     """
     state['feedback'] = []
-    
-    # Initialize rep tracking if not present
+
     if 'rep_details' not in state:
         state['rep_details'] = []
-    
+    if 'stage' not in state:
+        state['stage'] = 'down'
+    if 'frame_count' not in state:
+        state['frame_count'] = 0
+    if 'feedback_cooldowns' not in state:
+        state['feedback_cooldowns'] = {}
+
+    def get_vis(lm):
+        v = getattr(lm, 'visibility', 0.0)
+        return v if v is not None else 0.0
+
+    def push_debounced_feedback(msg, cooldown=3.0):
+        now = time.time()
+        if now - state['feedback_cooldowns'].get(msg, 0) > cooldown:
+            state['feedback'].append(msg)
+            state['feedback_cooldowns'][msg] = now
+
     try:
-        # Get landmarks for both arms
         l_shoulder = get_landmark(landmarks, PoseLandmark.LEFT_SHOULDER)
-        l_elbow = get_landmark(landmarks, PoseLandmark.LEFT_ELBOW)
-        l_wrist = get_landmark(landmarks, PoseLandmark.LEFT_WRIST)
-        
+        l_elbow    = get_landmark(landmarks, PoseLandmark.LEFT_ELBOW)
+        l_wrist    = get_landmark(landmarks, PoseLandmark.LEFT_WRIST)
+
         r_shoulder = get_landmark(landmarks, PoseLandmark.RIGHT_SHOULDER)
-        r_elbow = get_landmark(landmarks, PoseLandmark.RIGHT_ELBOW)
-        r_wrist = get_landmark(landmarks, PoseLandmark.RIGHT_WRIST)
-        
-        # Determine angle mode
-        use_3d = state.get('use_3d', False)
-        
-        # Calculate angles
-        l_angle = None
-        if l_shoulder and l_elbow and l_wrist:
-            if use_3d:
-                l_angle = calculate_angle_3d(
-                    [l_shoulder.x, l_shoulder.y, l_shoulder.z], 
-                    [l_elbow.x, l_elbow.y, l_elbow.z], 
-                    [l_wrist.x, l_wrist.y, l_wrist.z]
-                )
-            else:
-                 l_angle = calculate_angle([l_shoulder.x, l_shoulder.y], [l_elbow.x, l_elbow.y], [l_wrist.x, l_wrist.y])
-             
-        r_angle = None
-        if r_shoulder and r_elbow and r_wrist:
-            if use_3d:
-                r_angle = calculate_angle_3d(
-                    [r_shoulder.x, r_shoulder.y, r_shoulder.z], 
-                    [r_elbow.x, r_elbow.y, r_elbow.z], 
-                    [r_wrist.x, r_wrist.y, r_wrist.z]
-                )
-            else:
-                 r_angle = calculate_angle([r_shoulder.x, r_shoulder.y], [r_elbow.x, r_elbow.y], [r_wrist.x, r_wrist.y])
-        
-        # Determine active arm (track the one "performing" the curl)
-        angle = None
-        side = "Left"
-        
-        # Identify which arm is active (sharper angle = more engagement in curl usually)
-        if l_angle is not None and (r_angle is None or l_angle < r_angle):
-            angle = l_angle
-            side = "Left"
-        elif r_angle is not None:
-            angle = r_angle
-            side = "Right"
-            
-        if angle is None:
+        r_elbow    = get_landmark(landmarks, PoseLandmark.RIGHT_ELBOW)
+        r_wrist    = get_landmark(landmarks, PoseLandmark.RIGHT_WRIST)
+
+        # --- Visibility gate: Support upper-body only framing ---
+        # MediaPipe confidence drops when legs are missing, so we use a loose 0.15 threshold
+        l_vis_ok = (get_vis(l_shoulder) >= 0.15 and
+                    get_vis(l_elbow)    >= 0.15 and
+                    get_vis(l_wrist)    >= 0.15)
+        r_vis_ok = (get_vis(r_shoulder) >= 0.15 and
+                    get_vis(r_elbow)    >= 0.15 and
+                    get_vis(r_wrist)    >= 0.15)
+
+        if not l_vis_ok and not r_vis_ok:
+            push_debounced_feedback("Show full arm", cooldown=4.0)
+            state['frame_count'] = 0
             return state
-            
-        # Thresholds (Relaxed)
-        UP_THRESH = 75   # Peak contraction
-        DOWN_THRESH = 145 # Full extension
-        
-        # State machine
-        if angle > DOWN_THRESH:
-            state['stage'] = 'down'
-            # Reset feedback when extended
-            
-        if angle < UP_THRESH and state.get('stage') == 'down':
-            state['stage'] = 'up'
-            state['count'] += 1
-            state['feedback'].append(f"{side} Curl Rep {state['count']}!")
-            # Add visual feedback via 'last_rep' mechanism if we want, 
-            # but current 'ui_feedback' handles it.
-            
-            # Record rep details
-            state['rep_details'].append({
-                'rep_count': state['count'],
-                'min_angle': angle,
-                'form_issues': ['Good form'], # Add specific issues if we detect them
-                'is_correct': True,
-                'depth_score': 3.0 # Perfect contraction (Scale 0-3 to match UI)
-            })
-            
-        # Feedback Logic
-        state['feedback'] = []
-        
-        # Encourage full extension if they are lingering in middle
-        if state.get('stage') == 'up' and angle > 90 and angle < 140:
-             state['feedback'].append("Fully extend arm")
-             
-        # Encourage full curl if they are lingering in middle
-        elif state.get('stage') == 'down' and angle < 130 and angle > 80:
-             state['feedback'].append("Curl all the way up")
-             
-        # Positive reinforcement
-        if angle < UP_THRESH + 10:
-             state['feedback'].append("Good squeeze!")
-        elif angle > DOWN_THRESH - 10:
-             state['feedback'].append("Good extension")
-             
+
+        use_3d = state.get('use_3d', False)
+
+        def arm_angle(s, e, w):
+            if use_3d:
+                return calculate_angle_3d(
+                    [s.x, s.y, s.z], [e.x, e.y, e.z], [w.x, w.y, w.z])
+            return calculate_angle(
+                [s.x, s.y], [e.x, e.y], [w.x, w.y])
+
+        l_angle = arm_angle(l_shoulder, l_elbow, l_wrist) if l_vis_ok else None
+        r_angle = arm_angle(r_shoulder, r_elbow, r_wrist) if r_vis_ok else None
+
+        # Pick the arm with the smaller (more curled) angle as the active side
+        if l_angle is not None and (r_angle is None or l_angle <= r_angle):
+            angle, side = l_angle, "Left"
+        else:
+            angle, side = r_angle, "Right"
+
+        # --- Demo-friendly BUT noise-resistant thresholds ---
+        # A 55-degree required Range of Motion (130 - 75 = 55) prevents 
+        # hand opening/closing (a ~15° shift) from crossing both thresholds.
+        UP_THRESH   = 75    # Upward curl must cross 75°
+        DOWN_THRESH = 130   # Downward extension must cross 130°
+        FRAMES_REQUIRED = 2  # 2 frames = fast-curl friendly but still noise-resistant
+
+        if state['stage'] == 'down':
+            if angle <= UP_THRESH:
+                state['frame_count'] += 1
+                if state['frame_count'] >= FRAMES_REQUIRED:
+                    state['stage'] = 'up'
+                    state['frame_count'] = 0
+                    state['count'] += 1
+                    state['feedback'].append(f"Rep {state['count']}!")
+                    state['rep_details'].append({
+                        'rep_count': state['count'],
+                        'min_angle': round(angle, 1),
+                        'form_issues': ['Good form'],
+                        'is_correct': True,
+                        'depth_score': 3.0
+                    })
+            else:
+                state['frame_count'] = 0
+                if 80 <= angle <= 130:
+                    push_debounced_feedback("curl higher")
+
+        else:  # stage == 'up'
+            if angle >= DOWN_THRESH:
+                state['frame_count'] += 1
+                if state['frame_count'] >= FRAMES_REQUIRED:
+                    state['stage'] = 'down'
+                    state['frame_count'] = 0
+            else:
+                state['frame_count'] = 0
+                if 80 <= angle <= 140:
+                    push_debounced_feedback("extend fully")
+
     except Exception as e:
         print(f"Error in bicep curl: {e}")
         
@@ -852,7 +1051,7 @@ EXERCISE_CONFIG = {
     },
     "situp": {
         "rule_logic": update_situp_state,
-        "initial_state": {'count': 0, 'is_down': False, 'feedback': [], 'frame_count_up': 0, 'frame_count_down': 0}
+        "initial_state": {'count': 0, 'feedback': [], 'stage': 'down', 'rise_buf': []}
     },
     "jumping_jacks": {
         "rule_logic": update_jumping_jacks_state,
@@ -1347,10 +1546,208 @@ def analytics_summary(request):
         average_accuracy=Avg('accuracy_score')
     )
     
+    # Get 5 most recent sessions
+    recent_qs = WorkoutSession.objects.order_by('-date')[:5]
+    serializer = WorkoutSessionSerializer(recent_qs, many=True)
+    
     return Response({
         'total_workouts': total_workouts,
         'total_reps': stats['total_reps'] or 0,
         'total_duration': round(stats['total_duration'] or 0, 1),
-        'average_accuracy': round(stats['average_accuracy'] or 0, 1)
+        'average_accuracy': round(stats['average_accuracy'] or 0, 1),
+        'recent_sessions': serializer.data
     })
+
+import csv
+from django.utils.dateparse import parse_date
+from django.db.models.functions import TruncDate
+from django.http import HttpResponse
+
+@api_view(['GET'])
+def volume_trend(request):
+    """
+    Returns daily volume (total reps & duration) aggregated over the last N days.
+    """
+    days = int(request.GET.get('days', 7))
+    from datetime import timedelta
+    from django.utils import timezone
+    
+    start_date = timezone.now() - timedelta(days=days)
+    
+    # Query sessions, truncate to date, and sum
+    daily_stats = WorkoutSession.objects.filter(date__gte=start_date)\
+        .annotate(day=TruncDate('date'))\
+        .values('day')\
+        .annotate(
+            total_reps=Sum('reps'),
+            total_duration=Sum('duration_seconds')
+        )\
+        .order_by('day')
+        
+    formatted_data = []
+    for stat in daily_stats:
+        formatted_data.append({
+            'date': stat['day'].strftime('%Y-%m-%d') if stat['day'] else '',
+            'reps': stat['total_reps'] or 0,
+            'duration': round(stat['total_duration'] or 0)
+        })
+        
+    return Response(formatted_data)
+
+@api_view(['GET'])
+def export_csv(request):
+    """
+    Generates a CSV of workout history.
+    """
+    export_type = request.GET.get('type', 'single') # 'single' or 'range'
+    start = request.GET.get('start')
+    end = request.GET.get('end')
+    
+    queryset = WorkoutSession.objects.all().order_by('-date')
+    if export_type == 'single' and start:
+        queryset = queryset.filter(date__date=parse_date(start))
+    elif export_type == 'range' and start and end:
+        queryset = queryset.filter(date__date__gte=parse_date(start), date__date__lte=parse_date(end))
+        
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="analytics_export.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow(['Date', 'Time', 'Exercise', 'Reps', 'Duration (Sec)', 'Accuracy Score', 'Metric Type'])
+    
+    from django.utils import timezone
+    for session in queryset:
+        local_dt = timezone.localtime(session.date)
+        is_rep_based = session.reps > 0
+        metric_type = 'Reps' if is_rep_based else 'Duration'
+        writer.writerow([
+            local_dt.strftime('%Y-%m-%d'),
+            local_dt.strftime('%H:%M:%S'),
+            session.exercise_type.replace('_', ' ').title(),
+            session.reps,
+            round(session.duration_seconds, 1),
+            session.accuracy_score,
+            metric_type
+        ])
+    
+    return response
+
+@api_view(['GET'])
+@csrf_exempt
+def export_pdf(request):
+    """
+    Generates a PDF Report of workout history using ReportLab.
+    """
+    import io
+    import logging
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from django.utils import timezone
+    from django.http import HttpResponse
+
+    logger = logging.getLogger(__name__)
+    
+    try:
+        export_type = request.GET.get('type', 'single')
+        start = request.GET.get('start')
+        end = request.GET.get('end')
+        
+        logger.info(f"PDF Export triggered: type={export_type}, start={start}, end={end}")
+        
+        queryset = WorkoutSession.objects.all().order_by('-date')
+        profile = UserProfile.objects.first()
+        display_name = profile.display_name if profile else "Athlete_01"
+        
+        report_period = "Lifetime"
+        if export_type == 'single' and start:
+            dt_start = parse_date(start)
+            if dt_start:
+                queryset = queryset.filter(date__date=dt_start)
+                report_period = start
+        elif export_type == 'range' and start and end:
+            dt_start = parse_date(start)
+            dt_end = parse_date(end)
+            if dt_start and dt_end:
+                queryset = queryset.filter(date__date__gte=dt_start, date__date__lte=dt_end)
+                report_period = f"{start} to {end}"
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Header
+        elements.append(Paragraph("Exercise Tracking Analytics Report", styles['Title']))
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph(f"<b>Name:</b> {display_name}", styles['Normal']))
+        elements.append(Paragraph(f"<b>Report Period:</b> {report_period}", styles['Normal']))
+        elements.append(Paragraph(f"<b>Generated On:</b> {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+        elements.append(Spacer(1, 24))
+
+        
+        # Table Data
+        data = [['Date', 'Time', 'Exercise', 'Metric', 'Value', 'Score']]
+        for session in queryset:
+            local_dt = timezone.localtime(session.date)
+            metric = 'Reps' if session.reps > 0 else 'Duration (s)'
+            val = str(session.reps) if session.reps > 0 else str(round(session.duration_seconds, 1))
+            data.append([
+                local_dt.strftime('%Y-%m-%d'),
+                local_dt.strftime('%H:%M'),
+                session.exercise_type.replace('_', ' ').title(),
+                metric,
+                val,
+                f"{session.accuracy_score}%"
+            ])
+            
+        if len(data) == 1:
+            elements.append(Paragraph("No exercise data found for the selected timeframe.", styles['Normal']))
+        else:
+            t = Table(data, colWidths=[80, 50, 120, 80, 60, 60])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.grey),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0,0), (-1,0), 12),
+                ('BACKGROUND', (0,1), (-1,-1), colors.whitesmoke),
+                ('GRID', (0,0), (-1,-1), 1, colors.black)
+            ]))
+            elements.append(t)
+        
+        doc.build(elements)
+        
+        # Build response from buffer
+        pdf_content = buffer.getvalue()
+        buffer.close()
+        
+        response = HttpResponse(pdf_content, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="workout_report.pdf"'
+        return response
+        
+    except Exception as e:
+        logger.error(f"PDF generation failed: {str(e)}")
+        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
+
+@api_view(['GET', 'PATCH'])
+@csrf_exempt
+def profile_detail(request):
+    """
+    Retrieve or update the user profile.
+    Since this is a simple demo, we use a single profile record.
+    """
+    profile, created = UserProfile.objects.get_or_create(id=1)
+    
+    if request.method == 'GET':
+        serializer = UserProfileSerializer(profile)
+        return Response(serializer.data)
+        
+    elif request.method == 'PATCH':
+        serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
 
