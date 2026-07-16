@@ -1,5 +1,4 @@
 # Motion Detection Backend (Django)
-
 ## Overview
 This is the backend for the Fitness Motion Analytics platform. It is built with Django and provides API endpoints for analyzing exercise videos (pushup, plank, situp, squat, lunges, high knees) using both rule-based logic (MediaPipe) and deep learning models (TensorFlow/Keras). It supports both video upload and live webcam analysis.
 
